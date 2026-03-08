@@ -584,8 +584,18 @@ async fn handle_slack_message(
             }
 
             if !response.is_empty() {
-                if let Err(e) = send_slack_response(bot_token, channel, &response).await {
-                    error!("Slack: failed to send response: {e}");
+                // If the agent already sent message(s) via send_message tool,
+                // suppress the final text response to avoid duplicate messages.
+                // Still store in DB for history.
+                if used_send_message_tool {
+                    info!(
+                        "Slack: suppressing final response for chat {} (already sent via send_message tool)",
+                        chat_id
+                    );
+                } else {
+                    if let Err(e) = send_slack_response(bot_token, channel, &response).await {
+                        error!("Slack: failed to send response: {e}");
+                    }
                 }
 
                 let bot_msg = StoredMessage {

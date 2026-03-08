@@ -1,6 +1,8 @@
+pub mod acp_agent;
 pub mod activate_skill;
 pub mod bash;
 pub mod browser;
+pub mod comfyui;
 pub mod command_runner;
 pub mod edit_file;
 pub mod export_chat;
@@ -292,7 +294,7 @@ impl ToolRegistry {
             );
         }
         let skills_data_dir = config.skills_data_dir();
-        let tools: Vec<Box<dyn Tool>> = vec![
+        let mut tools: Vec<Box<dyn Tool>> = vec![
             Box::new(bash::BashTool::new_with_isolation(
                 &config.working_dir,
                 config.working_dir_isolation,
@@ -371,6 +373,29 @@ impl ToolRegistry {
                 db.clone(),
             )),
         ];
+        // Conditionally register ComfyUI tool if comfyui_url is configured
+        if let Some(ref url) = config.comfyui_url {
+            if !url.trim().is_empty() {
+                tools.push(Box::new(comfyui::ComfyUiTool::new(url, &config.data_dir)));
+            }
+        }
+        // Conditionally register ACP agent tool if acp is configured
+        if let Some(ref acp) = config.acp {
+            if acp.enabled {
+                tracing::info!(
+                    agent = %acp.default_agent,
+                    cwd = %acp.default_cwd,
+                    "ACP agent tool registered"
+                );
+                tools.push(Box::new(acp_agent::AcpAgentTool::new(
+                    &acp.default_agent,
+                    &acp.default_cwd,
+                    acp.timeout,
+                    &acp.default_permission,
+                )));
+            }
+        }
+        tracing::info!("ToolRegistry initialized with {} tools", tools.len());
         ToolRegistry {
             tools,
             cached_definitions: OnceLock::new(),

@@ -65,8 +65,14 @@ impl SkillManager {
     fn discover_skills_internal(&self, include_unavailable: bool) -> Vec<SkillMetadata> {
         let mut skills = Vec::new();
         let entries = match std::fs::read_dir(&self.skills_dir) {
-            Ok(e) => e,
-            Err(_) => return skills,
+            Ok(e) => {
+                tracing::debug!("discover_skills: reading dir {:?} succeeded", self.skills_dir);
+                e
+            }
+            Err(e) => {
+                tracing::warn!("discover_skills: FAILED to read dir {:?}: {}", self.skills_dir, e);
+                return skills;
+            }
         };
 
         for entry in entries.flatten() {
@@ -156,6 +162,7 @@ impl SkillManager {
     /// Returns empty string if no skills are available.
     pub fn build_skills_catalog(&self) -> String {
         let skills = self.discover_skills();
+        tracing::debug!("build_skills_catalog: discovered {} skills from {:?}", skills.len(), self.skills_dir);
         if skills.is_empty() {
             return String::new();
         }

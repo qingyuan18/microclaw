@@ -1,0 +1,680 @@
+{
+  "189": {
+    "inputs": {
+      "av_latent": [
+        "240",
+        1
+      ]
+    },
+    "class_type": "LTXVSeparateAVLatent",
+    "_meta": {
+      "title": "LTXVSeparateAVLatent"
+    }
+  },
+  "200": {
+    "inputs": {
+      "value": 1024
+    },
+    "class_type": "JWInteger",
+    "_meta": {
+      "title": "\u5bbd\u5ea6"
+    }
+  },
+  "201": {
+    "inputs": {
+      "value": 720
+    },
+    "class_type": "JWInteger",
+    "_meta": {
+      "title": "\u9ad8\u5ea6"
+    }
+  },
+  "202": {
+    "inputs": {
+      "value": 6
+    },
+    "class_type": "JWInteger",
+    "_meta": {
+      "title": "\u65f6\u957f\uff08\u79d2\uff09"
+    }
+  },
+  "203": {
+    "inputs": {
+      "samples": [
+        "189",
+        0
+      ],
+      "vae": [
+        "217",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE\u89e3\u7801"
+    }
+  },
+  "204": {
+    "inputs": {
+      "samples": [
+        "189",
+        1
+      ],
+      "audio_vae": [
+        "216",
+        0
+      ]
+    },
+    "class_type": "LTXVAudioVAEDecode",
+    "_meta": {
+      "title": "LTXV Audio VAE Decode"
+    }
+  },
+  "205": {
+    "inputs": {
+      "image": "aorun_16.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "\u52a0\u8f7d\u56fe\u50cf"
+    }
+  },
+  "208": {
+    "inputs": {
+      "width": [
+        "200",
+        0
+      ],
+      "height": [
+        "201",
+        0
+      ],
+      "upscale_method": "nearest-exact",
+      "keep_proportion": "crop",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 2,
+      "device": "cpu",
+      "image": [
+        "205",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resize Image v2"
+    }
+  },
+  "209": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "scale_by": 0.5,
+      "image": [
+        "211",
+        0
+      ]
+    },
+    "class_type": "ImageScaleBy",
+    "_meta": {
+      "title": "\u7f29\u653e\u56fe\u50cf\uff08\u6bd4\u4f8b\uff09"
+    }
+  },
+  "210": {
+    "inputs": {
+      "expression": "a*25+1",
+      "a": [
+        "202",
+        0
+      ]
+    },
+    "class_type": "MathExpression|pysssss",
+    "_meta": {
+      "title": "Math Expression \ud83d\udc0d"
+    }
+  },
+  "211": {
+    "inputs": {
+      "width": [
+        "208",
+        1
+      ],
+      "height": [
+        "208",
+        2
+      ],
+      "batch_size": 1,
+      "color": 0
+    },
+    "class_type": "EmptyImage",
+    "_meta": {
+      "title": "\u7a7a\u56fe\u50cf"
+    }
+  },
+  "212": {
+    "inputs": {
+      "image": [
+        "209",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "\u83b7\u53d6\u56fe\u50cf\u5c3a\u5bf8"
+    }
+  },
+  "213": {
+    "inputs": {
+      "img_compression": 33,
+      "image": [
+        "208",
+        0
+      ]
+    },
+    "class_type": "LTXVPreprocess",
+    "_meta": {
+      "title": "LTXV\u9884\u5904\u7406"
+    }
+  },
+  "216": {
+    "inputs": {
+      "ckpt_name": "ltx-2-19b-distilled-fp8.safetensors"
+    },
+    "class_type": "LTXVAudioVAELoader",
+    "_meta": {
+      "title": "LTXV Audio VAE Loader"
+    }
+  },
+  "217": {
+    "inputs": {
+      "ckpt_name": "ltx-2-19b-distilled-fp8.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Checkpoint\u52a0\u8f7d\u5668\uff08\u7b80\u6613\uff09"
+    }
+  },
+  "218": {
+    "inputs": {
+      "text_encoder": "gemma_3_12B_it.safetensors",
+      "ckpt_name": "ltx-2-19b-distilled-fp8.safetensors",
+      "device": "default"
+    },
+    "class_type": "LTXAVTextEncoderLoader",
+    "_meta": {
+      "title": "LTXV Audio Text Encoder Loader"
+    }
+  },
+  "219": {
+    "inputs": {
+      "lora_name": "ltx-2-19b-lora-camera-control-dolly-left.safetensors",
+      "strength_model": 1,
+      "model": [
+        "217",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoRA\u52a0\u8f7d\u5668\uff08\u4ec5\u6a21\u578b\uff09"
+    }
+  },
+  "220": {
+    "inputs": {
+      "lora_name": "ltx-2-19b-lora-camera-control-dolly-left.safetensors",
+      "strength_model": 1,
+      "model": [
+        "217",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoRA\u52a0\u8f7d\u5668\uff08\u4ec5\u6a21\u578b\uff09"
+    }
+  },
+  "221": {
+    "inputs": {
+      "text": "blurry, out of focus, overexposed, underexposed, low contrast, washed out colors, excessive noise, grainy texture, poor lighting, flickering, motion blur, distorted proportions, unnatural skin tones, deformed facial features, asymmetrical face, missing facial features, extra limbs, disfigured hands, wrong hand count, artifacts around text, unreadable text on shirt or hat, incorrect lettering on cap (\u201cPNTR\u201d), incorrect t-shirt slogan (\u201cJUST DO IT\u201d), missing microphone, misplaced microphone, inconsistent perspective, camera shake, incorrect depth of field, background too sharp, background clutter, distracting reflections, harsh shadows, inconsistent lighting direction, color banding, cartoonish rendering, 3D CGI look, unrealistic materials, uncanny valley effect, incorrect ethnicity, wrong gender, exaggerated expressions, smiling, laughing, exaggerated sadness, wrong gaze direction, eyes looking at camera, mismatched lip sync, silent or muted audio, distorted voice, robotic voice, echo, background noise, off-sync audio, missing sniff sounds, incorrect dialogue, added dialogue, repetitive speech, jittery movement, awkward pauses, incorrect timing, unnatural transitions, inconsistent framing, tilted camera, missing door or shelves, missing shallow depth of field, flat lighting, inconsistent tone, cinematic oversaturation, stylized filters, or AI artifacts, subtitles, captions, text overlay, burned-in text, on-screen text, subtitle bar, text at bottom of screen.",
+      "clip": [
+        "218",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP\u6587\u672c\u7f16\u7801"
+    }
+  },
+  "222": {
+    "inputs": {
+      "text": [
+        "250",
+        0
+      ],
+      "clip": [
+        "218",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP\u6587\u672c\u7f16\u7801"
+    }
+  },
+  "223": {
+    "inputs": {
+      "frame_rate": 25,
+      "positive": [
+        "222",
+        0
+      ],
+      "negative": [
+        "221",
+        0
+      ]
+    },
+    "class_type": "LTXVConditioning",
+    "_meta": {
+      "title": "LTXV\u6761\u4ef6"
+    }
+  },
+  "224": {
+    "inputs": {
+      "cfg": 4,
+      "model": [
+        "220",
+        0
+      ],
+      "positive": [
+        "223",
+        0
+      ],
+      "negative": [
+        "223",
+        1
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFG\u5f15\u5bfc\u5668"
+    }
+  },
+  "225": {
+    "inputs": {
+      "steps": 20,
+      "max_shift": 2.05,
+      "base_shift": 0.95,
+      "stretch": true,
+      "terminal": 0.1,
+      "latent": [
+        "244",
+        0
+      ]
+    },
+    "class_type": "LTXVScheduler",
+    "_meta": {
+      "title": "LTXV\u8c03\u5ea6\u5668"
+    }
+  },
+  "226": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "K\u91c7\u6837\u5668\u9009\u62e9"
+    }
+  },
+  "227": {
+    "inputs": {
+      "noise_seed": 1049552937648285
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "\u968f\u673a\u566a\u6ce2"
+    }
+  },
+  "228": {
+    "inputs": {
+      "noise": [
+        "227",
+        0
+      ],
+      "guider": [
+        "224",
+        0
+      ],
+      "sampler": [
+        "226",
+        0
+      ],
+      "sigmas": [
+        "225",
+        0
+      ],
+      "latent_image": [
+        "244",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "\u81ea\u5b9a\u4e49\u91c7\u6837\u5668\uff08\u9ad8\u7ea7\uff09"
+    }
+  },
+  "229": {
+    "inputs": {
+      "av_latent": [
+        "228",
+        0
+      ]
+    },
+    "class_type": "LTXVSeparateAVLatent",
+    "_meta": {
+      "title": "LTXVSeparateAVLatent"
+    }
+  },
+  "230": {
+    "inputs": {
+      "positive": [
+        "223",
+        0
+      ],
+      "negative": [
+        "223",
+        1
+      ],
+      "latent": [
+        "229",
+        0
+      ]
+    },
+    "class_type": "LTXVCropGuides",
+    "_meta": {
+      "title": "LTXV\u88c1\u526a\u6307\u5bfc"
+    }
+  },
+  "231": {
+    "inputs": {
+      "lora_name": "ltx-2-19b-lora-camera-control-dolly-left.safetensors",
+      "strength_model": 1,
+      "model": [
+        "219",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoRA\u52a0\u8f7d\u5668\uff08\u4ec5\u6a21\u578b\uff09"
+    }
+  },
+  "232": {
+    "inputs": {
+      "model_name": "ltx-2-spatial-upscaler-x2-1.0.safetensors"
+    },
+    "class_type": "LatentUpscaleModelLoader",
+    "_meta": {
+      "title": "\u52a0\u8f7dLatent\u653e\u5927\u6a21\u578b"
+    }
+  },
+  "233": {
+    "inputs": {
+      "samples": [
+        "230",
+        2
+      ],
+      "upscale_model": [
+        "232",
+        0
+      ],
+      "vae": [
+        "217",
+        2
+      ]
+    },
+    "class_type": "LTXVLatentUpsampler",
+    "_meta": {
+      "title": "spatial"
+    }
+  },
+  "234": {
+    "inputs": {
+      "strength": 1,
+      "bypass": false,
+      "vae": [
+        "217",
+        2
+      ],
+      "image": [
+        "213",
+        0
+      ],
+      "latent": [
+        "233",
+        0
+      ]
+    },
+    "class_type": "LTXVImgToVideoInplace",
+    "_meta": {
+      "title": "LTXVImgToVideoInplace"
+    }
+  },
+  "235": {
+    "inputs": {
+      "noise_seed": 0
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "\u968f\u673a\u566a\u6ce2"
+    }
+  },
+  "236": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "231",
+        0
+      ],
+      "positive": [
+        "230",
+        0
+      ],
+      "negative": [
+        "230",
+        1
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFG\u5f15\u5bfc\u5668"
+    }
+  },
+  "237": {
+    "inputs": {
+      "sigmas": "0.909375, 0.725, 0.421875, 0.0"
+    },
+    "class_type": "ManualSigmas",
+    "_meta": {
+      "title": "ManualSigmas"
+    }
+  },
+  "238": {
+    "inputs": {
+      "sampler_name": "gradient_estimation"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "K\u91c7\u6837\u5668\u9009\u62e9"
+    }
+  },
+  "239": {
+    "inputs": {
+      "video_latent": [
+        "234",
+        0
+      ],
+      "audio_latent": [
+        "229",
+        1
+      ]
+    },
+    "class_type": "LTXVConcatAVLatent",
+    "_meta": {
+      "title": "LTXVConcatAVLatent"
+    }
+  },
+  "240": {
+    "inputs": {
+      "noise": [
+        "235",
+        0
+      ],
+      "guider": [
+        "236",
+        0
+      ],
+      "sampler": [
+        "238",
+        0
+      ],
+      "sigmas": [
+        "237",
+        0
+      ],
+      "latent_image": [
+        "239",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "\u81ea\u5b9a\u4e49\u91c7\u6837\u5668\uff08\u9ad8\u7ea7\uff09"
+    }
+  },
+  "242": {
+    "inputs": {
+      "width": [
+        "212",
+        0
+      ],
+      "height": [
+        "212",
+        1
+      ],
+      "length": [
+        "210",
+        0
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLTXVLatentVideo",
+    "_meta": {
+      "title": "\u7a7aLatent\u89c6\u9891\uff08LTXV\uff09"
+    }
+  },
+  "243": {
+    "inputs": {
+      "frames_number": [
+        "210",
+        0
+      ],
+      "frame_rate": 25,
+      "batch_size": 1,
+      "audio_vae": [
+        "216",
+        0
+      ]
+    },
+    "class_type": "LTXVEmptyLatentAudio",
+    "_meta": {
+      "title": "LTXV Empty Latent Audio"
+    }
+  },
+  "244": {
+    "inputs": {
+      "video_latent": [
+        "245",
+        0
+      ],
+      "audio_latent": [
+        "243",
+        0
+      ]
+    },
+    "class_type": "LTXVConcatAVLatent",
+    "_meta": {
+      "title": "LTXVConcatAVLatent"
+    }
+  },
+  "245": {
+    "inputs": {
+      "strength": 1,
+      "bypass": false,
+      "vae": [
+        "217",
+        2
+      ],
+      "image": [
+        "213",
+        0
+      ],
+      "latent": [
+        "242",
+        0
+      ]
+    },
+    "class_type": "LTXVImgToVideoInplace",
+    "_meta": {
+      "title": "LTXVImgToVideoInplace"
+    }
+  },
+  "249": {
+    "inputs": {
+      "frame_rate": 25,
+      "loop_count": 0,
+      "filename_prefix": "ltx2",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "203",
+        0
+      ],
+      "audio": [
+        "204",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine \ud83c\udfa5\ud83c\udd65\ud83c\udd57\ud83c\udd62"
+    }
+  },
+  "250": {
+    "inputs": {
+      "text": "\u67d4\u548c\u7684\u6668\u5149\u6d12\u843d\uff0c\u955c\u5934\u955c\u5934\u5b9a\u683c\u5728\u4e00\u4f4d\u5a07\u7f8e\u768420\u5c81\u4e9a\u6d32\u5973\u6027\u8eab\u4e0a\uff0c\u4e00\u4f4d\u8eab\u7a7f\u7c89\u8272\u957f\u88d9\u7684\u5973\u6027\u3002\u5979\u7684\u5934\u4e0a\u6234\u7740\u4e00\u9876\u88c5\u9970\u6709\u84dd\u8272\u7fbd\u6bdb\u548c\u7c89\u8272\u82b1\u6735\u7684\u5934\u9970\u3002\u5979\u53cc\u81c2\u4ea4\u53c9\u4e8e\u80f8\u524d,\u773c\u775b\u5fae\u95ed,\u9762\u90e8\u8868\u60c5\u5e73\u9759\uff0c\u5979\u7684\u808c\u80a4\u5728\u7c89\u8272\u7761\u88d9\u7684\u6620\u886c\u4e0b\u663e\u5f97\u5149\u5f69\u7167\u4eba\uff0c\u7cbe\u81f4\u7684\u82b1\u7eb9\u5728\u5149\u7ebf\u4e2d\u5fae\u5fae\u95ea\u70c1\u3002\u5979\u7f13\u7f13\u5782\u4e0b\u773c\u775b\u770b\u7740\u80f8\u90e8\uff0c\u955c\u5934\u968f\u4e4b\u62c9\u8fd1\u6210\u4e2d\u8fd1\u666f\u3002\u968f\u7740\u8f7b\u8f7b\u7684\u7ab8\u7aa3\u58f0\uff0c\u7a81\u7136\uff0c\u5979\u7684\u80f8\u90e8\u660e\u663e\u5730\u9686\u8d77\uff0c\u8863\u670d\u6263\u5b50\u6491\u5f00\uff0c\u5e76\u968f\u7740\u8fd9\u4e00\u610f\u5916\u53d8\u5316\u53d1\u51fa\u7ab8\u7aa3\u58f0\u3002\u5979\u90a3\u53cc\u674f\u4ec1\u773c\u60ca\u8bb6\u5730\u7741\u5927\uff0c\u5634\u5507\u5fae\u5f20\uff0c\u7528\u6e05\u6670\u60a6\u8033\u7684\u666e\u901a\u8bdd\u60ca\u547c\u9053\uff1a\u201c\u54c7\uff0c\u7761\u4e2a\u61d2\u89c9\u5c31\u53d8\u5927\u4e86\uff0c\u771f\u597d\uff01\u201d \u5979\u7684\u58f0\u97f3\u5728\u7a7a\u6c14\u4e2d\u56de\u8361\uff0c\u4e0e\u7a97\u5916\u8fdc\u5904\u9e1f\u513f\u7684\u9e23\u53eb\u5b8c\u7f8e\u878d\u5408\u3002\u573a\u666f\u4ee5\u4e00\u4e2a\u67d4\u548c\u7684\u5bf9\u7126\u7ed3\u675f\uff0c\u6355\u6349\u5230\u5979\u8868\u60c5\u7684\u6bcf\u4e00\u4e2a\u7ec6\u5fae\u4e4b\u5904\u3002\u8d85\u5199\u5b9e\u7684\u8d28\u611f\uff0c\u7535\u5f71\u822c\u7684\u6784\u56fe\uff0c8k \u5206\u8fa8\u7387\uff0c\u7ec6\u8282\u4e30\u5bcc\u3002"
+    },
+    "class_type": "Text Multiline",
+    "_meta": {
+      "title": "Text Multiline"
+    }
+  },
+  "251": {
+    "inputs": {
+      "purge_cache": true,
+      "purge_models": true,
+      "anything": [
+        "203",
+        0
+      ]
+    },
+    "class_type": "LayerUtility: PurgeVRAM V2",
+    "_meta": {
+      "title": "\u56fe\u5c42\u5de5\u5177\uff1a\u6e05\u9664VRAM V2"
+    }
+  }
+}

@@ -653,7 +653,7 @@ impl Database {
     pub fn store_message(&self, msg: &StoredMessage) -> Result<(), MicroClawError> {
         let conn = self.lock_conn();
         conn.execute(
-            "INSERT OR REPLACE INTO messages (id, chat_id, sender_name, content, is_from_bot, timestamp)
+            "INSERT OR IGNORE INTO messages (id, chat_id, sender_name, content, is_from_bot, timestamp)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 msg.id,
@@ -665,6 +665,25 @@ impl Database {
             ],
         )?;
         Ok(())
+    }
+
+    /// Store a message only if it doesn't already exist. Returns `true` if the
+    /// message was actually inserted (new), `false` if it already existed.
+    pub fn store_message_if_new(&self, msg: &StoredMessage) -> Result<bool, MicroClawError> {
+        let conn = self.lock_conn();
+        let affected = conn.execute(
+            "INSERT OR IGNORE INTO messages (id, chat_id, sender_name, content, is_from_bot, timestamp)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                msg.id,
+                msg.chat_id,
+                msg.sender_name,
+                msg.content,
+                msg.is_from_bot as i32,
+                msg.timestamp,
+            ],
+        )?;
+        Ok(affected > 0)
     }
 
     pub fn get_recent_messages(
@@ -2494,7 +2513,7 @@ mod tests {
     }
 
     #[test]
-    fn test_store_message_upsert() {
+    fn test_store_message_idempotent() {
         let (db, dir) = test_db();
         let msg = StoredMessage {
             id: "msg1".into(),
@@ -2506,7 +2525,8 @@ mod tests {
         };
         db.store_message(&msg).unwrap();
 
-        // Store same id again with different content (INSERT OR REPLACE)
+        // Store same id again with different content — INSERT OR IGNORE
+        // should keep the original and not update.
         let msg2 = StoredMessage {
             id: "msg1".into(),
             chat_id: 100,
@@ -2519,7 +2539,30 @@ mod tests {
 
         let messages = db.get_recent_messages(100, 10).unwrap();
         assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].content, "updated");
+        // INSERT OR IGNORE keeps original content and timestamp
+        assert_eq!(messages[0].content, "original");
+        assert_eq!(messages[0].timestamp, "2024-01-01T00:00:00Z");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn test_store_message_if_new() {
+        let (db, dir) = test_db();
+        let msg = StoredMessage {
+            id: "msg1".into(),
+            chat_id: 100,
+            sender_name: "alice".into(),
+            content: "hello".into(),
+            is_from_bot: false,
+            timestamp: "2024-01-01T00:00:00Z".into(),
+        };
+        // First insert returns true (new)
+        assert!(db.store_message_if_new(&msg).unwrap());
+        // Second insert returns false (already exists)
+        assert!(!db.store_message_if_new(&msg).unwrap());
+
+        let messages = db.get_recent_messages(100, 10).unwrap();
+        assert_eq!(messages.len(), 1);
         cleanup(&dir);
     }
 

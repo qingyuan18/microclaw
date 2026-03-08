@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::sync::RwLock;
@@ -884,6 +885,97 @@ async fn get_token(
         .ok_or_else(|| "Missing tenant_access_token".to_string())
 }
 
+/// Download an image from Feishu by image_key and return (base64_data, media_type).
+async fn download_feishu_image(
+    http_client: &reqwest::Client,
+    base_url: &str,
+    app_id: &str,
+    app_secret: &str,
+    image_key: &str,
+    message_id: &str,
+) -> Result<(String, String), String> {
+    let token = get_token(http_client, base_url, app_id, app_secret).await?;
+
+    // Try message resource API first (works for user-sent images)
+    // GET /open-apis/im/v1/messages/{message_id}/resources/{file_key}?type=image
+    let resp = if !message_id.is_empty() {
+        let resource_url = format!(
+            "{}/open-apis/im/v1/messages/{}/resources/{}?type=image",
+            base_url, message_id, image_key
+        );
+        info!("Feishu: trying message resource API for image {image_key} (message_id={message_id})");
+        let resource_resp = http_client
+            .get(&resource_url)
+            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+            .send()
+            .await
+            .map_err(|e| format!("Failed to download Feishu image via resource API: {e}"))?;
+        if resource_resp.status().is_success() {
+            resource_resp
+        } else {
+            // Fall back to /im/v1/images/{image_key} (works for bot-uploaded images)
+            info!("Feishu: resource API returned {}, falling back to images API", resource_resp.status());
+            let fallback_url = format!(
+                "{}/open-apis/im/v1/images/{}",
+                base_url, image_key
+            );
+            http_client
+                .get(&fallback_url)
+                .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+                .send()
+                .await
+                .map_err(|e| format!("Failed to download Feishu image: {e}"))?
+        }
+    } else {
+        // No message_id, use images API directly
+        let url = format!(
+            "{}/open-apis/im/v1/images/{}",
+            base_url, image_key
+        );
+        http_client
+            .get(&url)
+            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+            .send()
+            .await
+            .map_err(|e| format!("Failed to download Feishu image: {e}"))?
+    };
+
+    if !resp.status().is_success() {
+        return Err(format!(
+            "Feishu image download error: HTTP {}",
+            resp.status()
+        ));
+    }
+
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read image bytes: {e}"))?;
+
+    // Detect media type from magic bytes
+    let media_type = if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
+        "image/png"
+    } else if bytes.starts_with(&[0xFF, 0xD8]) {
+        "image/jpeg"
+    } else if bytes.starts_with(b"GIF") {
+        "image/gif"
+    } else if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        "image/webp"
+    } else {
+        "image/jpeg"
+    };
+
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+
+    info!(
+        "Feishu: downloaded image {image_key}: {} bytes, {media_type}",
+        bytes.len()
+    );
+
+    Ok((b64, media_type.to_string()))
+}
+
 // ---------------------------------------------------------------------------
 // WebSocket mode
 // ---------------------------------------------------------------------------
@@ -1110,6 +1202,22 @@ async fn send_ack(write: &WsSink, request_frame: &pb::Frame) {
 }
 
 // ---------------------------------------------------------------------------
+// Per-chat processing lock (serialize message handling per chat)
+// ---------------------------------------------------------------------------
+
+static CHAT_LOCKS: std::sync::LazyLock<
+    tokio::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+> = std::sync::LazyLock::new(|| tokio::sync::Mutex::new(HashMap::new()));
+
+async fn acquire_chat_lock(chat_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+    let mut locks = CHAT_LOCKS.lock().await;
+    locks
+        .entry(chat_id.to_string())
+        .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+        .clone()
+}
+
+// ---------------------------------------------------------------------------
 // Message deduplication cache (6-hour TTL)
 // ---------------------------------------------------------------------------
 
@@ -1184,8 +1292,14 @@ async fn handle_feishu_event(
         .and_then(|v| v.as_str())
         .unwrap_or("user");
 
-    // Skip bot's own messages
-    if sender_open_id == bot_open_id || sender_type == "bot" {
+    // Skip bot's own messages (sender_type can be "bot" or "app" depending
+    // on Feishu API version / message origin)
+    if sender_open_id == bot_open_id || sender_type != "user" {
+        if sender_type != "user" || sender_open_id == bot_open_id {
+            info!(
+                "Feishu: skipping non-user message: sender_type={sender_type}, sender_open_id={sender_open_id}"
+            );
+        }
         return;
     }
 
@@ -1211,7 +1325,9 @@ async fn handle_feishu_event(
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
-    info!("Feishu event: message_id={message_id}, chat_id={chat_id_str}");
+    info!(
+        "Feishu event: message_id={message_id}, chat_id={chat_id_str}, sender_type={sender_type}"
+    );
 
     // Deduplicate: skip if this message_id was already processed
     if is_duplicate_message(message_id).await {
@@ -1226,7 +1342,77 @@ async fn handle_feishu_event(
     let is_dm = chat_type_raw == "p2p";
     let text = parse_message_content(content_raw, message_type);
 
-    if text.trim().is_empty() {
+    // Handle image messages: download the image and convert to base64
+    let image_data: Option<(String, String)> = if message_type == "image" {
+        // Feishu image content: {"image_key": "img_v3_..."}
+        let image_key = serde_json::from_str::<serde_json::Value>(content_raw)
+            .ok()
+            .and_then(|v| v.get("image_key").and_then(|k| k.as_str()).map(|s| s.to_string()));
+        if let Some(key) = image_key {
+            let http_client = reqwest::Client::new();
+            match download_feishu_image(
+                &http_client,
+                base_url,
+                &feishu_cfg.app_id,
+                &feishu_cfg.app_secret,
+                &key,
+                message_id,
+            )
+            .await
+            {
+                Ok((base64_data, media_type)) => Some((base64_data, media_type)),
+                Err(e) => {
+                    error!("Feishu: failed to download image {key}: {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Save incoming image to a local file so skills/tools can reference it by path
+    let saved_image_path: Option<String> = if let Some((ref base64_data, ref media_type)) = image_data {
+        let ext = if media_type.contains("png") { "png" } else { "jpg" };
+        let filename = format!("/tmp/feishu_upload_{}.{}", uuid::Uuid::new_v4(), ext);
+        match base64::engine::general_purpose::STANDARD.decode(base64_data) {
+            Ok(bytes) => {
+                match tokio::fs::write(&filename, &bytes).await {
+                    Ok(_) => {
+                        info!("Feishu: saved uploaded image to {}", filename);
+                        Some(filename)
+                    }
+                    Err(e) => {
+                        error!("Feishu: failed to save image to {}: {}", filename, e);
+                        None
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Feishu: failed to decode base64 image: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // For image messages with no text, use a default prompt so the message isn't empty
+    let effective_text = if text.trim().is_empty() && image_data.is_some() {
+        if let Some(ref path) = saved_image_path {
+            format!("[用户发送了一张图片，已保存到本地: {}]", path)
+        } else {
+            "[用户发送了一张图片]".to_string()
+        }
+    } else if let Some(ref path) = saved_image_path {
+        format!("{}\n[图片已保存到本地: {}]", text, path)
+    } else {
+        text
+    };
+
+    if effective_text.trim().is_empty() {
         return;
     }
 
@@ -1253,6 +1439,12 @@ async fn handle_feishu_event(
         false
     };
 
+    // Acquire per-chat lock to serialize message processing and prevent
+    // concurrent handlers from loading the same stale session, which would
+    // cause earlier messages to be re-sent to the LLM.
+    let chat_lock = acquire_chat_lock(chat_id_str).await;
+    let _guard = chat_lock.lock().await;
+
     handle_feishu_message(
         app_state,
         feishu_cfg,
@@ -1260,10 +1452,11 @@ async fn handle_feishu_event(
         bot_open_id,
         chat_id_str,
         sender_open_id,
-        &text,
+        &effective_text,
         is_dm,
         is_mentioned,
         message_id,
+        image_data,
     )
     .await;
 }
@@ -1280,6 +1473,7 @@ async fn handle_feishu_message(
     is_dm: bool,
     is_mentioned: bool,
     message_id: &str,
+    image_data: Option<(String, String)>,
 ) {
     let chat_type = if is_dm { "feishu_dm" } else { "feishu_group" };
     let title = format!("feishu-{external_chat_id}");
@@ -1298,7 +1492,9 @@ async fn handle_feishu_message(
         return;
     }
 
-    // Store incoming message
+    // Store incoming message (DB-level dedup: INSERT OR IGNORE by message_id).
+    // If the message was already stored (e.g. after WS reconnect + event
+    // re-delivery), skip processing entirely to prevent duplication.
     let stored = StoredMessage {
         id: if message_id.is_empty() {
             uuid::Uuid::new_v4().to_string()
@@ -1311,7 +1507,19 @@ async fn handle_feishu_message(
         is_from_bot: false,
         timestamp: chrono::Utc::now().to_rfc3339(),
     };
-    let _ = call_blocking(app_state.db.clone(), move |db| db.store_message(&stored)).await;
+    let is_new = call_blocking(app_state.db.clone(), move |db| {
+        db.store_message_if_new(&stored)
+    })
+    .await
+    .unwrap_or(true); // on error, assume new to avoid silently dropping messages
+
+    if !is_new {
+        info!(
+            "Feishu: message already in DB (duplicate), skipping: message_id={message_id} chat={}",
+            external_chat_id
+        );
+        return;
+    }
 
     // Handle slash commands
     let http_client = reqwest::Client::new();
@@ -1433,7 +1641,7 @@ async fn handle_feishu_message(
             chat_type: if is_dm { "private" } else { "group" },
         },
         None,
-        None,
+        image_data,
         Some(&event_tx),
     )
     .await
@@ -1450,16 +1658,27 @@ async fn handle_feishu_message(
             }
 
             if !response.is_empty() {
-                if let Err(e) = send_feishu_response(
-                    &http_client,
-                    base_url,
-                    &token,
-                    external_chat_id,
-                    &response,
-                )
-                .await
-                {
-                    error!("Feishu: failed to send response: {e}");
+                // If the agent already sent message(s) via send_message tool,
+                // suppress the final text response to avoid duplicate messages
+                // (common with roleplay skills that send attachments + captions).
+                // Still store in DB for history.
+                if used_send_message_tool {
+                    info!(
+                        "Feishu: suppressing final response for chat {} (already sent via send_message tool)",
+                        chat_id
+                    );
+                } else {
+                    if let Err(e) = send_feishu_response(
+                        &http_client,
+                        base_url,
+                        &token,
+                        external_chat_id,
+                        &response,
+                    )
+                    .await
+                    {
+                        error!("Feishu: failed to send response: {e}");
+                    }
                 }
 
                 let bot_msg = StoredMessage {
@@ -1514,6 +1733,10 @@ async fn handle_feishu_message(
 // Webhook mode
 // ---------------------------------------------------------------------------
 
+/// Cached bot open_id for webhook mode (resolved once, reused across requests).
+static WEBHOOK_BOT_OPEN_ID: std::sync::LazyLock<tokio::sync::RwLock<String>> =
+    std::sync::LazyLock::new(|| tokio::sync::RwLock::new(String::new()));
+
 /// Register Feishu webhook routes on the given axum Router.
 /// Called when connection_mode is "webhook".
 pub fn register_feishu_webhook(router: axum::Router, app_state: Arc<AppState>) -> axum::Router {
@@ -1551,32 +1774,38 @@ pub fn register_feishu_webhook(router: axum::Router, app_state: Arc<AppState>) -
                     return axum::Json(serde_json::json!({ "challenge": challenge }));
                 }
 
-                // Resolve bot_open_id (we need it for mention detection)
-                let http_client = reqwest::Client::new();
-                let bot_open_id =
-                    match get_token(&http_client, &base, &cfg.app_id, &cfg.app_secret).await {
-                        Ok(_token) => String::new(), // Will be resolved below
-                        Err(_) => String::new(),
-                    };
-
-                // Try to resolve bot open_id for proper mention detection
-                let bot_id = if bot_open_id.is_empty() {
-                    if let Ok(token) =
-                        get_token(&http_client, &base, &cfg.app_id, &cfg.app_secret).await
-                    {
-                        resolve_bot_open_id(&http_client, &base, &token)
-                            .await
-                            .unwrap_or_default()
-                    } else {
-                        String::new()
-                    }
-                } else {
-                    bot_open_id
-                };
-
-                // Process the event
+                // Return response IMMEDIATELY, then process asynchronously.
+                // Previously this handler blocked on 2 HTTP calls to resolve
+                // bot_open_id before returning, which could cause Feishu to
+                // timeout and re-deliver the event.
                 let event = body.0;
                 tokio::spawn(async move {
+                    // Resolve bot_open_id lazily (cached after first resolve).
+                    // This runs OUTSIDE the webhook response path so Feishu
+                    // gets its {"code":0} immediately.
+                    let bot_id = {
+                        let cached = WEBHOOK_BOT_OPEN_ID.read().await;
+                        if !cached.is_empty() {
+                            cached.clone()
+                        } else {
+                            drop(cached);
+                            let http_client = reqwest::Client::new();
+                            let resolved = if let Ok(token) =
+                                get_token(&http_client, &base, &cfg.app_id, &cfg.app_secret).await
+                            {
+                                resolve_bot_open_id(&http_client, &base, &token)
+                                    .await
+                                    .unwrap_or_default()
+                            } else {
+                                String::new()
+                            };
+                            if !resolved.is_empty() {
+                                let mut w = WEBHOOK_BOT_OPEN_ID.write().await;
+                                *w = resolved.clone();
+                            }
+                            resolved
+                        }
+                    };
                     handle_feishu_event(state, &cfg, &base, &bot_id, &event).await;
                 });
 

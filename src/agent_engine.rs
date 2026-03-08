@@ -300,6 +300,27 @@ pub(crate) async fn process_with_agent_impl(
             .await?;
             for stored_msg in &new_msgs {
                 let content = format_user_message(&stored_msg.sender_name, &stored_msg.content);
+
+                // Content-level dedup: skip if this exact text is already in
+                // the session (guards against INSERT OR REPLACE timestamp
+                // drift or clock skew causing re-fetches).
+                let already_in_session = session_messages.iter().any(|m| {
+                    if m.role != "user" {
+                        return false;
+                    }
+                    match &m.content {
+                        MessageContent::Text(t) => t.contains(&content),
+                        _ => false,
+                    }
+                });
+                if already_in_session {
+                    tracing::info!(
+                        "Skipping duplicate user message already in session: {}",
+                        stored_msg.id
+                    );
+                    continue;
+                }
+
                 // Merge if last message is also from user
                 if let Some(last) = session_messages.last_mut() {
                     if last.role == "user" {
@@ -360,6 +381,11 @@ pub(crate) async fn process_with_agent_impl(
     let memory_context = format!("{}{}", file_memory, db_memory);
     let skills_catalog = state.skills.build_skills_catalog();
     let soul_content = load_soul_content(&state.config, chat_id);
+    let acp_enabled = state
+        .config
+        .acp
+        .as_ref()
+        .map_or(false, |a| a.enabled);
     let system_prompt = build_system_prompt(
         &state.config.bot_username,
         context.caller_channel,
@@ -367,6 +393,7 @@ pub(crate) async fn process_with_agent_impl(
         chat_id,
         &skills_catalog,
         soul_content.as_deref(),
+        acp_enabled,
     );
 
     // If image_data is present, convert the last user message to a blocks-based message with the image
@@ -982,6 +1009,7 @@ pub(crate) fn build_system_prompt(
     chat_id: i64,
     skills_catalog: &str,
     soul_content: Option<&str>,
+    acp_enabled: bool,
 ) -> String {
     // If a SOUL.md is provided, use it as the identity preamble instead of the default
     let identity = if let Some(soul) = soul_content {
@@ -998,6 +1026,18 @@ Your name is {bot_username}. Current channel: {caller_channel}."#
         )
     };
 
+    let acp_line = if acp_enabled {
+        "\n- Invoke ACP-compatible coding agents like Claude Code, Gemini CLI, Codex, or OpenCode (acp_agent) — use this when the user asks to use a coding agent or mentions claude code, gemini, codex, etc."
+    } else {
+        ""
+    };
+
+    let acp_rule = if acp_enabled {
+        "\nIMPORTANT: When using coding agents (Claude Code, Gemini CLI, Codex, OpenCode), you MUST use the acp_agent tool. NEVER invoke claude, gemini, codex, or similar CLI tools directly via bash. The acp_agent tool manages sessions, permissions, and timeouts properly."
+    } else {
+        ""
+    };
+
     let mut prompt = format!(
         r#"{identity}
 
@@ -1012,10 +1052,10 @@ You have access to the following capabilities:
 - Schedule tasks (schedule_task, list_scheduled_tasks, pause/resume/cancel_scheduled_task, get_task_history)
 - Export chat history to markdown (export_chat)
 - Understand images sent by users (they appear as image content blocks)
-- Delegate self-contained sub-tasks to a parallel agent (sub_agent)
+- Delegate self-contained sub-tasks to a parallel agent (sub_agent){acp_line}
 - Activate agent skills (activate_skill) for specialized tasks
 - Plan and track tasks with a todo list (todo_read, todo_write) — use this to break down complex tasks into steps, track progress, and stay organized
-
+{acp_rule}
 The current chat_id is {chat_id}. Use this when calling send_message, schedule, export_chat, memory(chat scope), or todo tools.
 Permission model: you may only operate on the current chat unless this chat is configured as a control chat. If you try cross-chat operations without permission, tools will return a permission error.
 
@@ -1504,6 +1544,8 @@ mod tests {
             reflector_interval_mins: 15,
             soul_path: None,
             skip_tool_approval: false,
+            comfyui_url: None,
+            acp: None,
             channels: std::collections::HashMap::new(),
         };
         cfg.data_dir = base_dir.to_string_lossy().to_string();
@@ -1774,7 +1816,7 @@ mod tests {
     #[test]
     fn test_build_system_prompt_with_soul() {
         let soul = "I am a friendly pirate assistant. I speak in pirate lingo and love adventure.";
-        let prompt = super::build_system_prompt("testbot", "telegram", "", 42, "", Some(soul));
+        let prompt = super::build_system_prompt("testbot", "telegram", "", 42, "", Some(soul), false);
         assert!(prompt.contains("<soul>"));
         assert!(prompt.contains("pirate"));
         assert!(prompt.contains("</soul>"));
@@ -1785,7 +1827,7 @@ mod tests {
 
     #[test]
     fn test_build_system_prompt_without_soul() {
-        let prompt = super::build_system_prompt("testbot", "telegram", "", 42, "", None);
+        let prompt = super::build_system_prompt("testbot", "telegram", "", 42, "", None, false);
         assert!(!prompt.contains("<soul>"));
         assert!(prompt.contains("a helpful AI assistant across chat channels"));
     }
@@ -1840,6 +1882,8 @@ mod tests {
             reflector_enabled: true,
             reflector_interval_mins: 15,
             skip_tool_approval: false,
+            comfyui_url: None,
+            acp: None,
             channels: std::collections::HashMap::new(),
         };
 
@@ -1901,6 +1945,8 @@ mod tests {
             reflector_enabled: true,
             reflector_interval_mins: 15,
             skip_tool_approval: false,
+            comfyui_url: None,
+            acp: None,
             channels: std::collections::HashMap::new(),
         };
 

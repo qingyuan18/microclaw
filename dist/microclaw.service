@@ -1,0 +1,65 @@
+# MicroClaw systemd service — Ubuntu example
+#
+# Install:
+#   sudo cp microclaw.service.example /etc/systemd/system/microclaw.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now microclaw
+#
+# Before starting, make sure:
+#   1. The binary exists at the ExecStart path
+#   2. microclaw.config.yaml is in WorkingDirectory
+#   3. The log file is writable:
+#      sudo touch /var/log/microclaw.log
+#      sudo chown ubuntu:ubuntu /var/log/microclaw.log
+
+[Unit]
+Description=MicroClaw AI Bot
+Documentation=https://github.com/gavrielc/microclaw
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/microclaw
+ExecStart=/home/ubuntu/microclaw/target/release/microclaw start
+
+# ── Restart policy ──
+Restart=always
+RestartSec=3
+# Give up after 5 consecutive failures within 60s
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# ── Logging ──
+StandardOutput=append:/var/log/microclaw.log
+StandardError=append:/var/log/microclaw.log
+
+# ── Environment ──
+Environment=RUST_LOG=info
+Environment=HOME=/home/ubuntu
+# Uncomment to use a custom config path:
+# Environment=MICROCLAW_CONFIG=/etc/microclaw/config.yaml
+
+# ── Graceful shutdown ──
+# MicroClaw listens for SIGTERM/SIGHUP and drains for 2s
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+# ── Resource limits ──
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# ── Security hardening ──
+NoNewPrivileges=true
+ProtectHome=read-only
+ProtectSystem=strict
+# Allow writes to data dir, working dir, and log
+ReadWritePaths=/home/ubuntu/microclaw/microclaw.data
+ReadWritePaths=/home/ubuntu/microclaw/tmp
+ReadWritePaths=/var/log/microclaw.log
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

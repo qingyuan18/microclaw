@@ -2042,6 +2042,8 @@ mod tests {
             reflector_interval_mins: 15,
             soul_path: None,
             skip_tool_approval: false,
+            comfyui_url: None,
+            acp: None,
             channels: std::collections::HashMap::new(),
         };
         // Should not panic
@@ -2093,6 +2095,8 @@ mod tests {
             reflector_interval_mins: 15,
             soul_path: None,
             skip_tool_approval: false,
+            comfyui_url: None,
+            acp: None,
             channels: std::collections::HashMap::new(),
         };
         let _provider = create_provider(&config);
@@ -2209,6 +2213,8 @@ mod tests {
             reflector_interval_mins: 15,
             soul_path: None,
             skip_tool_approval: false,
+            comfyui_url: None,
+            acp: None,
             channels: std::collections::HashMap::new(),
         };
         let provider = OpenAiProvider::new(&config);
@@ -2364,6 +2370,8 @@ mod tests {
             reflector_interval_mins: 15,
             soul_path: None,
             skip_tool_approval: false,
+            comfyui_url: None,
+            acp: None,
             channels: std::collections::HashMap::new(),
         };
         let provider = OpenAiProvider::new(&config);

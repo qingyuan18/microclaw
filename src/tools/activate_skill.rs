@@ -13,6 +13,7 @@ pub struct ActivateSkillTool {
 
 impl ActivateSkillTool {
     pub fn new(skills_dir: &str) -> Self {
+        info!("ActivateSkillTool: initialized with skills_dir={}", skills_dir);
         ActivateSkillTool {
             skill_manager: SkillManager::from_skills_dir(skills_dir),
         }
@@ -47,7 +48,7 @@ impl Tool for ActivateSkillTool {
             None => return ToolResult::error("Missing required parameter: skill_name".into()),
         };
 
-        info!("Activating skill: {}", skill_name);
+        info!("Activating skill: {} (skills_dir={:?})", skill_name, self.skill_manager.skills_dir());
 
         match self.skill_manager.load_skill_checked(skill_name) {
             Ok((meta, body)) => {

@@ -1,0 +1,28 @@
+[2m2026-03-08T07:20:48.116160Z[0m [32m INFO[0m [2mmicroclaw[0m[2m:[0m Database initialized
+[2m2026-03-08T07:20:48.116190Z[0m [32m INFO[0m [2mmicroclaw[0m[2m:[0m Memory manager initialized
+[2m2026-03-08T07:20:48.116841Z[0m [32m INFO[0m [2mmicroclaw[0m[2m:[0m Skill manager initialized (10 skills discovered)
+[2m2026-03-08T07:20:48.204342Z[0m [32m INFO[0m [2mmicroclaw::tools::activate_skill[0m[2m:[0m ActivateSkillTool: initialized with skills_dir=./microclaw.data/runtime/runtime/skills
+[2m2026-03-08T07:20:48.204367Z[0m [32m INFO[0m [2mmicroclaw::tools[0m[2m:[0m ACP agent tool registered [3magent[0m[2m=[0mclaude [3mcwd[0m[2m=[0m/home/ubuntu/microclaw/
+[2m2026-03-08T07:20:48.204373Z[0m [32m INFO[0m [2mmicroclaw::tools[0m[2m:[0m ToolRegistry initialized with 29 tools
+[2m2026-03-08T07:20:48.204397Z[0m [32m INFO[0m [2mmicroclaw::runtime[0m[2m:[0m Starting Feishu bot
+[2m2026-03-08T07:20:48.204447Z[0m [32m INFO[0m [2mmicroclaw::runtime[0m[2m:[0m Starting Web UI server on 127.0.0.1:10961
+[2m2026-03-08T07:20:48.204452Z[0m [32m INFO[0m [2mmicroclaw::runtime[0m[2m:[0m Running without Telegram adapter; waiting for other channels
+[2m2026-03-08T07:20:48.204455Z[0m [32m INFO[0m [2mmicroclaw::scheduler[0m[2m:[0m Scheduler started
+[2m2026-03-08T07:20:48.204454Z[0m [32m INFO[0m [2mmicroclaw::scheduler[0m[2m:[0m Reflector started (interval: 15min)
+[2m2026-03-08T07:20:48.204648Z[0m [32m INFO[0m [2mmicroclaw::web[0m[2m:[0m Web UI available at http://127.0.0.1:10961
+[2m2026-03-08T07:20:49.416207Z[0m [32m INFO[0m [2mmicroclaw::channels::feishu[0m[2m:[0m Feishu bot open_id: ou_472173cf4353e38558dc5718e034934f
+[2m2026-03-08T07:20:49.416237Z[0m [32m INFO[0m [2mmicroclaw::channels::feishu[0m[2m:[0m Feishu: starting WebSocket long connection
+[2m2026-03-08T07:20:49.820499Z[0m [32m INFO[0m [2mmicroclaw::channels::feishu[0m[2m:[0m Feishu WS: connecting (service_id=33554678, ping_interval=90s)
+[2m2026-03-08T07:20:50.980318Z[0m [32m INFO[0m [2mmicroclaw::channels::feishu[0m[2m:[0m Feishu WS: connected
+[2m2026-03-08T07:22:30.451674Z[0m [32m INFO[0m [2mmicroclaw::channels::feishu[0m[2m:[0m Feishu event: message_id=om_x100b55e508681ca8c36873e919aabd3, chat_id=oc_ff815ce7e1e7160575313e6ed5b779f3, sender_type=user
+[2m2026-03-08T07:22:30.455808Z[0m [32m INFO[0m [2mmicroclaw::channels::feishu[0m[2m:[0m Feishu: message already in DB (duplicate), skipping: message_id=om_x100b55e508681ca8c36873e919aabd3 chat=oc_ff815ce7e1e7160575313e6ed5b779f3
+[2m2026-03-08T07:26:10.627389Z[0m [32m INFO[0m [2mmicroclaw::channels::feishu[0m[2m:[0m Feishu event: message_id=om_x100b55e607d28868c4f659f71a63cbd, chat_id=oc_ff815ce7e1e7160575313e6ed5b779f3, sender_type=user
+[2m2026-03-08T07:26:11.267358Z[0m [32m INFO[0m [2mmicroclaw::channels::feishu[0m[2m:[0m Feishu message from ou_752e54c5ee568bbf1eaac974e0322ab1 in oc_ff815ce7e1e7160575313e6ed5b779f3: @_user_1 坎蒂，考你一个脑筋急转弯：前面来了一只熊，打一个成语，视频告诉我答案 ：）
+[2m2026-03-08T07:26:15.736803Z[0m [32m INFO[0m [2mmicroclaw::agent_engine[0m[2m:[0m Agent iteration 1 stop_reason=tool_use chat_id=9
+[2m2026-03-08T07:26:15.736828Z[0m [32m INFO[0m [2mmicroclaw::agent_engine[0m[2m:[0m Executing tool: comfyui_generate (iteration 1)
+[2m2026-03-08T07:26:27.276770Z[0m [32m INFO[0m [2mmicroclaw::channels::feishu[0m[2m:[0m Feishu event: message_id=om_x100b55e607d28868c4f659f71a63cbd, chat_id=oc_ff815ce7e1e7160575313e6ed5b779f3, sender_type=user
+[2m2026-03-08T07:26:27.276799Z[0m [32m INFO[0m [2mmicroclaw::channels::feishu[0m[2m:[0m Feishu: skipping duplicate message_id=om_x100b55e607d28868c4f659f71a63cbd
+[2m2026-03-08T07:28:01.254278Z[0m [32m INFO[0m [2mmicroclaw::channels::feishu[0m[2m:[0m Feishu event: message_id=om_x100b55f85becb8a0c4942058a03e6de, chat_id=oc_b3473c5995a6beb94f1d99f1d861fb4d, sender_type=user
+[2m2026-03-08T07:28:01.258311Z[0m [32m INFO[0m [2mmicroclaw::channels::feishu[0m[2m:[0m Feishu: message already in DB (duplicate), skipping: message_id=om_x100b55f85becb8a0c4942058a03e6de chat=oc_b3473c5995a6beb94f1d99f1d861fb4d
+[2m2026-03-08T07:30:02.261077Z[0m [32m INFO[0m [2mmicroclaw::agent_engine[0m[2m:[0m Agent iteration 2 stop_reason=tool_use chat_id=9
+[2m2026-03-08T07:30:02.261140Z[0m [32m INFO[0m [2mmicroclaw::agent_engine[0m[2m:[0m Executing tool: comfyui_generate (iteration 2)

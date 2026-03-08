@@ -46,6 +46,9 @@ fn minimal_config() -> Config {
         reflector_enabled: true,
         reflector_interval_mins: 15,
         soul_path: None,
+        skip_tool_approval: false,
+        comfyui_url: None,
+        acp: None,
         channels: std::collections::HashMap::new(),
     }
 }
