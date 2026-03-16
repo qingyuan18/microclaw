@@ -258,6 +258,13 @@ pub struct Config {
     #[serde(default)]
     pub acp: Option<AcpConfig>,
 
+    /// Enable AgentCore Runtime mode. When true, MicroClaw starts an HTTP
+    /// contract server on port 8080 with `/ping` and `/invocations` endpoints.
+    /// This is required when running inside Amazon Bedrock AgentCore.
+    /// Can also be enabled via `MICROCLAW_AGENTCORE=true` env var.
+    #[serde(default)]
+    pub agentcore_mode: bool,
+
     // --- Channel registry (new dynamic config) ---
     /// Per-channel configuration. Keys are channel names (e.g. "telegram", "discord", "slack", "web").
     /// Each value is channel-specific config deserialized by the adapter.
@@ -451,6 +458,11 @@ impl Config {
             self.skip_tool_approval = matches!(val.as_str(), "1" | "true" | "yes");
         }
 
+        // Allow env var override for agentcore_mode
+        if let Ok(val) = std::env::var("MICROCLAW_AGENTCORE") {
+            self.agentcore_mode = matches!(val.as_str(), "1" | "true" | "yes");
+        }
+
         // Synthesize `channels` map from legacy flat fields if empty
         if self.channels.is_empty() {
             if !self.telegram_bot_token.trim().is_empty() {
@@ -503,9 +515,10 @@ impl Config {
         let has_feishu = self.channels.contains_key("feishu");
         let has_web = self.web_enabled || self.channels.contains_key("web");
 
-        if !(has_telegram || has_discord || has_slack || has_feishu || has_web) {
+        if !(has_telegram || has_discord || has_slack || has_feishu || has_web || self.agentcore_mode)
+        {
             return Err(MicroClawError::Config(
-                "At least one channel must be enabled: telegram_bot_token, discord_bot_token, channels.slack, channels.feishu, or web_enabled=true".into(),
+                "At least one channel must be enabled: telegram_bot_token, discord_bot_token, channels.slack, channels.feishu, web_enabled=true, or agentcore_mode=true".into(),
             ));
         }
         if self.api_key.is_empty() && !provider_allows_empty_api_key(&self.llm_provider) {

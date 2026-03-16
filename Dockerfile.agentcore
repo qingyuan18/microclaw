@@ -1,0 +1,45 @@
+# ============================================================
+# Stage 1: Builder — compile MicroClaw with agentcore feature
+# ============================================================
+FROM --platform=linux/arm64 rust:1.83-slim AS builder
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends pkg-config libssl-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock ./
+COPY src/ src/
+COPY web/dist/ web/dist/
+
+# Build release binary with agentcore + openssl-vendored features
+RUN cargo build --release --features agentcore,openssl-vendored && \
+    strip target/release/microclaw
+
+# ============================================================
+# Stage 2: Runtime — minimal image
+# ============================================================
+FROM --platform=linux/arm64 debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy the compiled binary
+COPY --from=builder /build/target/release/microclaw /app/microclaw
+
+# Pre-create runtime data directory
+RUN mkdir -p /app/data/runtime
+
+# Default config: agentcore mode, data dir
+ENV MICROCLAW_AGENTCORE=true \
+    MICROCLAW_DATA_DIR=/app/data
+
+# AgentCore Runtime requires port 8080
+EXPOSE 8080
+
+# Rust cold start < 1s — no lightweight-agent shim needed.
+# AgentCore manages health via /ping, no Docker HEALTHCHECK needed.
+ENTRYPOINT ["/app/microclaw", "start"]

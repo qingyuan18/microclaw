@@ -8,3 +8,8 @@ website/
 tmp/
 working_dir/
 web/node_modules/
+dist/output/kenny_2.mp4
+dist/output/kenny_trimmed.mp4
+dist/output/kleiv_trimmed.mp4
+dist/output/kleiv.mp4
+dist/output/lily.mp4

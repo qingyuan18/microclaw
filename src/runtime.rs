@@ -5,6 +5,8 @@ use tracing::info;
 #[cfg(feature = "sqlite-vec")]
 use tracing::warn;
 
+use crate::s3_sync::S3SyncConfig;
+
 /// Wait for any termination signal: SIGTERM, SIGHUP, or Ctrl-C.
 /// Returns a human-readable label of which signal was received.
 async fn shutdown_signal() -> &'static str {
@@ -52,6 +54,16 @@ pub async fn run(
     skills: SkillManager,
     mcp_manager: crate::mcp::McpManager,
 ) -> anyhow::Result<()> {
+    // S3 sync: restore runtime data before opening the DB.
+    let s3_cfg = if config.agentcore_mode {
+        S3SyncConfig::from_env(&config.data_dir)
+    } else {
+        None
+    };
+    if let Some(ref cfg) = s3_cfg {
+        crate::s3_sync::restore_from_s3(cfg).await;
+    }
+
     let db = Arc::new(db);
     let llm = crate::llm::create_provider(&config);
     let embedding = crate::embedding::create_provider(&config);
@@ -139,6 +151,23 @@ pub async fn run(
     crate::scheduler::spawn_scheduler(state.clone());
     crate::scheduler::spawn_reflector(state.clone());
 
+    // S3 sync: spawn periodic background save.
+    let s3_shutdown = s3_cfg.map(crate::s3_sync::spawn_periodic_sync);
+
+    // AgentCore contract server MUST start first — AgentCore health-checks
+    // /ping very quickly after container launch.
+    let has_agentcore = state.config.agentcore_mode;
+    if has_agentcore {
+        let contract_state = state.clone();
+        info!(
+            "Starting AgentCore contract server on port {}",
+            crate::contract::AGENTCORE_CONTRACT_PORT
+        );
+        tokio::spawn(async move {
+            crate::contract::start_contract_server(contract_state).await;
+        });
+    }
+
     if let Some(ref token) = discord_token {
         let discord_state = state.clone();
         let token = token.clone();
@@ -177,7 +206,12 @@ pub async fn run(
 
     if let Some(bot) = telegram_bot {
         crate::telegram::start_telegram_bot(state, bot).await
-    } else if state.config.web_enabled || discord_token.is_some() || has_slack || has_feishu {
+    } else if state.config.web_enabled
+        || discord_token.is_some()
+        || has_slack
+        || has_feishu
+        || has_agentcore
+    {
         info!("Running without Telegram adapter; waiting for other channels");
         let sig = shutdown_signal().await;
         info!("Received {sig}, starting graceful shutdown...");
@@ -186,13 +220,18 @@ pub async fn run(
         info!("Allowing in-flight tasks 2s to finish...");
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
-        // SQLite WAL mode ensures DB consistency even on hard kill,
-        // but explicit flush is good practice
+        // S3 sync: trigger final save on shutdown (with 10s timeout).
+        if let Some(notify) = s3_shutdown {
+            info!("S3 sync: triggering final save...");
+            notify.notify_one();
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        }
+
         info!("Shutdown complete.");
         Ok(())
     } else {
         Err(anyhow!(
-            "No channel is enabled. Configure Telegram, Discord, Slack, Feishu, or web_enabled=true."
+            "No channel is enabled. Configure Telegram, Discord, Slack, Feishu, web_enabled=true, or agentcore_mode=true."
         ))
     }
 }
