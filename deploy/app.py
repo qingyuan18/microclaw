@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
-"""MicroClaw AgentCore CDK App."""
+"""MicroClaw AgentCore CDK App.
+
+Usage:
+  # Deploy shared router stack (once):
+    cdk deploy MicroClawRouter
+
+  # Deploy a bot runtime (per bot):
+    cdk deploy MicroClawBot-mybot -c bot_id=mybot
+
+  # Deploy both router + one bot:
+    cdk deploy --all -c bot_id=mybot
+"""
 
 import aws_cdk as cdk
 from stacks.agentcore_stack import MicroClawAgentCoreStack
@@ -12,15 +23,12 @@ env = cdk.Environment(
     region=app.node.try_get_context("region") or "us-west-2",
 )
 
-agentcore = MicroClawAgentCoreStack(app, "MicroClawAgentCore", env=env)
+# Shared router stack (API Gateway + Lambda + DynamoDB) — deploy once.
+MicroClawRouterStack(app, "MicroClawRouter", env=env)
 
-MicroClawRouterStack(
-    app,
-    "MicroClawRouter",
-    env=env,
-    runtime_arn=agentcore.runtime_arn,
-    runtime_endpoint_id=agentcore.runtime_endpoint_id,
-    data_bucket_name=agentcore.data_bucket_name,
-)
+# Per-bot AgentCore Runtime stack — deploy per bot_id.
+bot_id = app.node.try_get_context("bot_id")
+if bot_id:
+    MicroClawAgentCoreStack(app, f"MicroClawBot-{bot_id}", env=env)
 
 app.synth()

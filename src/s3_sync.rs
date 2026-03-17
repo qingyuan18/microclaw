@@ -15,6 +15,8 @@ use tracing::{error, info};
 #[cfg(feature = "agentcore")]
 use tracing::warn;
 
+use crate::db::Database;
+
 /// S3 sync configuration, resolved from environment variables.
 #[derive(Clone, Debug)]
 pub struct S3SyncConfig {
@@ -98,30 +100,28 @@ mod s3_ops {
 
             let resp = req.send().await?;
 
-            if let Some(objects) = resp.contents() {
-                for obj in objects {
-                    let Some(key) = obj.key() else { continue };
-                    let rel = key.strip_prefix(&cfg.prefix).unwrap_or(key);
-                    if rel.is_empty() || rel.ends_with('/') {
-                        continue;
-                    }
-
-                    let local_path = cfg.local_dir.join(rel);
-                    if let Some(parent) = local_path.parent() {
-                        tokio::fs::create_dir_all(parent).await?;
-                    }
-
-                    let get_resp = client
-                        .get_object()
-                        .bucket(&cfg.bucket)
-                        .key(key)
-                        .send()
-                        .await?;
-
-                    let body = get_resp.body.collect().await?.into_bytes();
-                    tokio::fs::write(&local_path, &body).await?;
-                    count += 1;
+            for obj in resp.contents() {
+                let Some(key) = obj.key() else { continue };
+                let rel: &str = key.strip_prefix(&cfg.prefix).unwrap_or(key);
+                if rel.is_empty() || rel.ends_with('/') {
+                    continue;
                 }
+
+                let local_path = cfg.local_dir.join(rel);
+                if let Some(parent) = local_path.parent() {
+                    tokio::fs::create_dir_all(parent).await?;
+                }
+
+                let get_resp = client
+                    .get_object()
+                    .bucket(&cfg.bucket)
+                    .key(key)
+                    .send()
+                    .await?;
+
+                let body = get_resp.body.collect().await?.into_bytes();
+                tokio::fs::write(&local_path, &body).await?;
+                count += 1;
             }
 
             if resp.is_truncated() == Some(true) {
@@ -247,8 +247,19 @@ pub async fn restore_from_s3(cfg: &S3SyncConfig) -> u64 {
     }
 }
 
-/// Save runtime data to S3.
-pub async fn save_to_s3(cfg: &S3SyncConfig) -> u64 {
+/// Save runtime data to S3. Checkpoints the SQLite WAL first for consistency.
+pub async fn save_to_s3(cfg: &S3SyncConfig, db: Option<&Arc<Database>>) -> u64 {
+    // Flush WAL to main DB file before copying to S3.
+    if let Some(db) = db {
+        let db = db.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            if let Err(e) = db.wal_checkpoint() {
+                error!("S3 sync: WAL checkpoint failed: {e}");
+            }
+        })
+        .await;
+    }
+
     let client = s3_ops::create_client().await;
     match s3_ops::save(&client, cfg).await {
         Ok(count) => {
@@ -264,7 +275,7 @@ pub async fn save_to_s3(cfg: &S3SyncConfig) -> u64 {
 
 /// Spawn the periodic S3 sync background task.
 /// Returns a `Notify` that can be used to trigger an immediate save (e.g. on SIGTERM).
-pub fn spawn_periodic_sync(cfg: S3SyncConfig) -> Arc<Notify> {
+pub fn spawn_periodic_sync(cfg: S3SyncConfig, db: Arc<Database>) -> Arc<Notify> {
     let shutdown = Arc::new(Notify::new());
     let shutdown_rx = shutdown.clone();
 
@@ -273,11 +284,11 @@ pub fn spawn_periodic_sync(cfg: S3SyncConfig) -> Arc<Notify> {
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(interval) => {
-                    save_to_s3(&cfg).await;
+                    save_to_s3(&cfg, Some(&db)).await;
                 }
                 _ = shutdown_rx.notified() => {
                     info!("S3 sync: shutdown signal received, performing final save");
-                    save_to_s3(&cfg).await;
+                    save_to_s3(&cfg, Some(&db)).await;
                     return;
                 }
             }

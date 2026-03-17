@@ -54,15 +54,15 @@ pub async fn run(
     skills: SkillManager,
     mcp_manager: crate::mcp::McpManager,
 ) -> anyhow::Result<()> {
-    // S3 sync: restore runtime data before opening the DB.
+    // S3 sync config (restore already happened in main.rs before DB open).
+    // Use data_root (parent of runtime/) so config + runtime data are both synced.
     let s3_cfg = if config.agentcore_mode {
-        S3SyncConfig::from_env(&config.data_dir)
+        let data_root = std::env::var("MICROCLAW_DATA_DIR")
+            .unwrap_or_else(|_| config.data_root_dir().to_string_lossy().to_string());
+        S3SyncConfig::from_env(&data_root)
     } else {
         None
     };
-    if let Some(ref cfg) = s3_cfg {
-        crate::s3_sync::restore_from_s3(cfg).await;
-    }
 
     let db = Arc::new(db);
     let llm = crate::llm::create_provider(&config);
@@ -152,7 +152,7 @@ pub async fn run(
     crate::scheduler::spawn_reflector(state.clone());
 
     // S3 sync: spawn periodic background save.
-    let s3_shutdown = s3_cfg.map(crate::s3_sync::spawn_periodic_sync);
+    let s3_shutdown = s3_cfg.map(|cfg| crate::s3_sync::spawn_periodic_sync(cfg, state.db.clone()));
 
     // AgentCore contract server MUST start first — AgentCore health-checks
     // /ping very quickly after container launch.

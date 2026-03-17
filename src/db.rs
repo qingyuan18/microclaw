@@ -397,6 +397,13 @@ impl Database {
         }
     }
 
+    /// Flush WAL to the main database file so that a file-level copy is consistent.
+    pub fn wal_checkpoint(&self) -> Result<(), MicroClawError> {
+        let conn = self.lock_conn();
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        Ok(())
+    }
+
     pub fn new(data_dir: &str) -> Result<Self, MicroClawError> {
         let db_path = Path::new(data_dir).join("microclaw.db");
         std::fs::create_dir_all(data_dir)?;

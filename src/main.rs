@@ -1,7 +1,7 @@
 use microclaw::config::Config;
 use microclaw::error::MicroClawError;
 use microclaw::{
-    builtin_skills, db, doctor, gateway, logging, mcp, memory, runtime, setup, skills,
+    builtin_skills, db, doctor, gateway, logging, mcp, memory, runtime, s3_sync, setup, skills,
 };
 use std::path::Path;
 use tracing::info;
@@ -141,6 +141,20 @@ async fn main() -> anyhow::Result<()> {
             eprintln!("Unknown command: {unknown}\n");
             print_help();
             std::process::exit(1);
+        }
+    }
+
+    // AgentCore: restore runtime data (config, DB, memory) from S3 BEFORE
+    // Config::load() and Database::new(), so restored files are on disk first.
+    let is_agentcore = matches!(
+        std::env::var("MICROCLAW_AGENTCORE").as_deref(),
+        Ok("1" | "true" | "yes")
+    );
+    if is_agentcore {
+        let data_dir = std::env::var("MICROCLAW_DATA_DIR").unwrap_or_else(|_| "./data".into());
+        std::fs::create_dir_all(&data_dir).ok();
+        if let Some(s3_cfg) = s3_sync::S3SyncConfig::from_env(&data_dir) {
+            s3_sync::restore_from_s3(&s3_cfg).await;
         }
     }
 

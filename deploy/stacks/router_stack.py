@@ -27,9 +27,9 @@ class MicroClawRouterStack(Stack):
         scope: Construct,
         construct_id: str,
         *,
-        runtime_arn: str,
-        runtime_endpoint_id: str,
-        data_bucket_name: str,
+        default_runtime_arn: str = "",
+        default_runtime_endpoint_id: str = "",
+        data_bucket_name: str = "",
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -76,8 +76,8 @@ class MicroClawRouterStack(Stack):
             timeout=Duration.seconds(lambda_timeout),
             memory_size=256,
             environment={
-                "AGENTCORE_RUNTIME_ARN": runtime_arn,
-                "AGENTCORE_QUALIFIER": runtime_endpoint_id,
+                "AGENTCORE_RUNTIME_ARN": default_runtime_arn,
+                "AGENTCORE_QUALIFIER": default_runtime_endpoint_id,
                 "ROUTING_TABLE_NAME": self.routing_table.table_name,
                 "AWS_REGION_NAME": region,
                 "LAMBDA_TIMEOUT_SECONDS": str(lambda_timeout),
@@ -99,12 +99,19 @@ class MicroClawRouterStack(Stack):
         )
 
         # Explicit routes for each channel
-        for channel in ["telegram", "slack", "feishu"]:
+        for channel in ["slack", "feishu"]:
             self.http_api.add_routes(
                 path=f"/webhook/{channel}",
                 methods=[apigwv2.HttpMethod.POST],
                 integration=integration,
             )
+
+        # Telegram: /webhook/telegram/{bot_id} — each bot sets a unique webhook URL
+        self.http_api.add_routes(
+            path="/webhook/telegram/{bot_id}",
+            methods=[apigwv2.HttpMethod.POST],
+            integration=integration,
+        )
 
         self.http_api.add_routes(
             path="/health",
@@ -114,13 +121,15 @@ class MicroClawRouterStack(Stack):
 
         # --- IAM Permissions ---
 
-        # AgentCore invocation
+        # AgentCore invocation — wildcard to support multiple bot runtimes
         self.router_fn.add_to_role_policy(
             iam.PolicyStatement(
                 actions=[
                     "bedrock-agentcore:InvokeAgentRuntime",
                 ],
-                resources=[runtime_arn, f"{runtime_arn}/*"],
+                resources=[
+                    f"arn:aws:bedrock-agentcore:{region}:{account}:runtime/*",
+                ],
             )
         )
 

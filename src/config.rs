@@ -324,6 +324,19 @@ impl Config {
         if std::path::Path::new("./microclaw.config.yml").exists() {
             return Ok(Some(PathBuf::from("./microclaw.config.yml")));
         }
+
+        // AgentCore: config may be restored from S3 into MICROCLAW_DATA_DIR
+        if let Ok(data_dir) = std::env::var("MICROCLAW_DATA_DIR") {
+            let p = PathBuf::from(&data_dir).join("microclaw.config.yaml");
+            if p.exists() {
+                return Ok(Some(p));
+            }
+            let p = PathBuf::from(&data_dir).join("microclaw.config.yml");
+            if p.exists() {
+                return Ok(Some(p));
+            }
+        }
+
         Ok(None)
     }
 

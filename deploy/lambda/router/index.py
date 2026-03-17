@@ -32,11 +32,12 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # --- Configuration ---
-AGENTCORE_RUNTIME_ARN = os.environ["AGENTCORE_RUNTIME_ARN"]
-AGENTCORE_QUALIFIER = os.environ["AGENTCORE_QUALIFIER"]
 ROUTING_TABLE_NAME = os.environ["ROUTING_TABLE_NAME"]
 AWS_REGION = os.environ.get("AWS_REGION_NAME", os.environ.get("AWS_REGION", "us-west-2"))
 LAMBDA_TIMEOUT_SECONDS = int(os.environ.get("LAMBDA_TIMEOUT_SECONDS", "300"))
+# Fallback runtime ARN (used when route record has no runtimeArn field).
+DEFAULT_RUNTIME_ARN = os.environ.get("AGENTCORE_RUNTIME_ARN", "")
+DEFAULT_QUALIFIER = os.environ.get("AGENTCORE_QUALIFIER", "")
 
 # --- AWS Clients ---
 dynamodb = boto3.resource("dynamodb", region_name=AWS_REGION)
@@ -84,12 +85,17 @@ def get_route(channel, channel_id):
         return None
 
 
-def get_or_create_session(bot_id):
-    """Get or create a session_id for a bot. Session IDs must be >= 33 chars."""
+def get_bot_config(bot_id):
+    """Get bot-level config (session_id, runtimeArn, qualifier) from DynamoDB.
+
+    Returns dict with 'sessionId', 'runtimeArn', 'qualifier' keys.
+    Creates a new session_id if none exists.
+    """
     pk = f"BOT#{bot_id}"
     try:
         resp = routing_table.get_item(Key={"PK": pk, "SK": "SESSION"})
         if "Item" in resp:
+            item = resp["Item"]
             routing_table.update_item(
                 Key={"PK": pk, "SK": "SESSION"},
                 UpdateExpression="SET lastActivity = :now",
@@ -97,9 +103,13 @@ def get_or_create_session(bot_id):
                     ":now": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                 },
             )
-            return resp["Item"]["sessionId"]
+            return {
+                "sessionId": item["sessionId"],
+                "runtimeArn": item.get("runtimeArn", DEFAULT_RUNTIME_ARN),
+                "qualifier": item.get("qualifier", DEFAULT_QUALIFIER),
+            }
     except ClientError as e:
-        logger.error("DynamoDB session lookup failed: %s", e)
+        logger.error("DynamoDB bot config lookup failed: %s", e)
 
     # Create new session (>= 33 chars required by AgentCore)
     session_id = f"ses_{bot_id}_{uuid.uuid4().hex[:16]}"
@@ -114,23 +124,29 @@ def get_or_create_session(bot_id):
                 "SK": "SESSION",
                 "sessionId": session_id,
                 "botId": bot_id,
+                "runtimeArn": DEFAULT_RUNTIME_ARN,
+                "qualifier": DEFAULT_QUALIFIER,
                 "createdAt": now_iso,
                 "lastActivity": now_iso,
             }
         )
     except ClientError as e:
-        logger.error("Failed to create session: %s", e)
+        logger.error("Failed to create bot config: %s", e)
 
     logger.info("New session for bot %s: %s", bot_id, session_id)
-    return session_id
+    return {
+        "sessionId": session_id,
+        "runtimeArn": DEFAULT_RUNTIME_ARN,
+        "qualifier": DEFAULT_QUALIFIER,
+    }
 
 
 # ---------------------------------------------------------------------------
 # AgentCore invocation
 # ---------------------------------------------------------------------------
 
-def invoke_agent_runtime(session_id, actor_id, channel, message,
-                         sender_name=None, external_chat_id=None):
+def invoke_agent_runtime(runtime_arn, qualifier, session_id, actor_id, channel,
+                         message, sender_name=None, external_chat_id=None):
     """Invoke the AgentCore Runtime container's /invocations endpoint."""
     payload = {
         "action": "chat",
@@ -146,12 +162,12 @@ def invoke_agent_runtime(session_id, actor_id, channel, message,
 
     try:
         logger.info(
-            "Invoking AgentCore: session=%s actor=%s channel=%s",
-            session_id, actor_id, channel,
+            "Invoking AgentCore: runtime=%s session=%s actor=%s channel=%s",
+            runtime_arn, session_id, actor_id, channel,
         )
         resp = agentcore_client.invoke_agent_runtime(
-            agentRuntimeArn=AGENTCORE_RUNTIME_ARN,
-            qualifier=AGENTCORE_QUALIFIER,
+            agentRuntimeArn=runtime_arn,
+            qualifier=qualifier,
             runtimeSessionId=session_id,
             payload=json.dumps(payload).encode(),
             contentType="application/json",
@@ -196,8 +212,12 @@ def send_telegram_message(bot_token, chat_id, text):
         logger.error("Telegram send failed: %s", e)
 
 
-def handle_telegram(body):
-    """Handle a Telegram webhook event."""
+def handle_telegram(body, bot_id=None):
+    """Handle a Telegram webhook event.
+
+    bot_id is extracted from the URL path: /webhook/telegram/{bot_id}.
+    Each Telegram bot sets its webhook to a unique URL containing its bot_id.
+    """
     update = json.loads(body) if isinstance(body, str) else body
     message = update.get("message", {})
     text = message.get("text", "")
@@ -208,10 +228,14 @@ def handle_telegram(body):
     user_id = str(message["from"]["id"])
     sender_name = message["from"].get("first_name", user_id)
 
-    # Look up route by chat_id (group) or user_id (DM)
-    route = get_route("telegram", chat_id) or get_route("telegram", user_id)
+    # Route by bot_id from URL path, fall back to chat_id lookup
+    route = None
+    if bot_id:
+        route = get_route("telegram", bot_id)
     if not route:
-        logger.warning("No route for telegram:%s", chat_id)
+        route = get_route("telegram", chat_id) or get_route("telegram", user_id)
+    if not route:
+        logger.warning("No route for telegram bot_id:%s chat:%s", bot_id, chat_id)
         return {"statusCode": 200, "body": "no route"}
 
     bot_token = route.get("botToken") or get_secret(route.get("botTokenSecretId", ""))
@@ -219,9 +243,11 @@ def handle_telegram(body):
         logger.error("No bot token for route telegram:%s", chat_id)
         return {"statusCode": 200, "body": "no token"}
 
-    session_id = get_or_create_session(route["botId"])
+    bot_cfg = get_bot_config(route["botId"])
     result = invoke_agent_runtime(
-        session_id=session_id,
+        runtime_arn=bot_cfg["runtimeArn"],
+        qualifier=bot_cfg["qualifier"],
+        session_id=bot_cfg["sessionId"],
         actor_id=f"telegram_{chat_id}",
         channel="telegram",
         message=text,
@@ -254,6 +280,9 @@ def handle_feishu(body, headers=None):
     message = evt.get("message", {})
     sender = evt.get("sender", {})
 
+    # Route by app_id — one Feishu app = one bot, serves all groups
+    app_id = header.get("app_id", "")
+
     msg_type = message.get("message_type", "")
     chat_id = message.get("chat_id", "")
     user_id = sender.get("sender_id", {}).get("open_id", "")
@@ -267,14 +296,16 @@ def handle_feishu(body, headers=None):
     if not text:
         return {"statusCode": 200, "body": "empty"}
 
-    route = get_route("feishu", chat_id)
+    route = get_route("feishu", app_id)
     if not route:
-        logger.warning("No route for feishu:%s", chat_id)
+        logger.warning("No route for feishu app_id:%s", app_id)
         return {"statusCode": 200, "body": "no route"}
 
-    session_id = get_or_create_session(route["botId"])
+    bot_cfg = get_bot_config(route["botId"])
     result = invoke_agent_runtime(
-        session_id=session_id,
+        runtime_arn=bot_cfg["runtimeArn"],
+        qualifier=bot_cfg["qualifier"],
+        session_id=bot_cfg["sessionId"],
         actor_id=f"feishu_{chat_id}",
         channel="feishu",
         message=text,
@@ -299,6 +330,9 @@ def handle_slack(body, headers=None):
             "body": json.dumps({"challenge": event["challenge"]}),
         }
 
+    # Route by api_app_id — one Slack app = one bot
+    app_id = event.get("api_app_id", "")
+
     slack_event = event.get("event", {})
     if slack_event.get("type") != "message" or slack_event.get("bot_id"):
         return {"statusCode": 200, "body": "ignored"}
@@ -310,16 +344,18 @@ def handle_slack(body, headers=None):
     if not text or not channel_id:
         return {"statusCode": 200, "body": "empty"}
 
-    route = get_route("slack", channel_id)
+    route = get_route("slack", app_id)
     if not route:
-        logger.warning("No route for slack:%s", channel_id)
+        logger.warning("No route for slack app_id:%s", app_id)
         return {"statusCode": 200, "body": "no route"}
 
     bot_token = route.get("botToken") or get_secret(route.get("botTokenSecretId", ""))
 
-    session_id = get_or_create_session(route["botId"])
+    bot_cfg = get_bot_config(route["botId"])
     result = invoke_agent_runtime(
-        session_id=session_id,
+        runtime_arn=bot_cfg["runtimeArn"],
+        qualifier=bot_cfg["qualifier"],
+        session_id=bot_cfg["sessionId"],
         actor_id=f"slack_{channel_id}",
         channel="slack",
         message=text,
@@ -376,8 +412,10 @@ def handler(event, context):
         body = base64.b64decode(body).decode("utf-8")
 
     try:
-        if path == "/webhook/telegram":
-            return handle_telegram(body)
+        # Telegram: /webhook/telegram/{bot_id} — each bot sets its own webhook URL
+        if path.startswith("/webhook/telegram"):
+            bot_id = path.split("/")[-1] if path.count("/") >= 3 else None
+            return handle_telegram(body, bot_id=bot_id)
         elif path == "/webhook/feishu":
             return handle_feishu(body, headers)
         elif path == "/webhook/slack":
