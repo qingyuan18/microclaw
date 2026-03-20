@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -sL \"https://api.github.com/repos/i-am-bee/acp/contents/docs/introduction\")",
+      "Bash(python3 -c \"import json,sys; items=json.load\\(sys.stdin\\); [print\\(i[''name'']\\) for i in items]\")",
+      "Bash(curl -sL \"https://api.github.com/repos/i-am-bee/acp/contents/docs/integrations\")",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/i-am-bee/acp/main/docs/integrations/mcp-adapter.mdx\")",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/i-am-bee/acp/main/docs/integrations/cursor.mdx\")",
+      "Bash(curl -sL \"https://api.github.com/repos/i-am-bee/acp/contents/docs/core-concepts\")",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/i-am-bee/acp/main/docs/core-concepts/overview.mdx\")",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/i-am-bee/acp/main/docs/core-concepts/architecture.mdx\")",
+      "Bash(curl -sL \"https://api.github.com/repos/i-am-bee/acp/contents/examples\")",
+      "Bash(curl -sL \"https://api.github.com/repos/i-am-bee/acp-mcp\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(''description:'', d.get\\(''description''\\)\\); print\\(''stars:'', d.get\\(''stargazers_count''\\)\\); print\\(''archived:'', d.get\\(''archived''\\)\\)\")",
+      "Bash(curl -sL \"https://api.github.com/repos/i-am-bee/acp-mcp/readme\")",
+      "Bash(curl -sL \"https://api.github.com/repos/i-am-bee/acp/contents/examples/python\")",
+      "WebFetch(domain:www.anthropic.com)",
+      "WebFetch(domain:agentclientprotocol.org)",
+      "WebFetch(domain:agentclientprotocol.com)",
+      "Bash(gh search repos \"agent client protocol\" --limit 20 --sort stars --json fullName,description,stargazersCount,url)",
+      "WebFetch(domain:cdn.agentclientprotocol.com)",
+      "WebFetch(domain:zed.dev)",
+      "Bash(gh api repos/openclaw/acpx)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f''Description: {d.get\\(\"\"description\"\"\\)}\\\\nLanguage: {d.get\\(\"\"language\"\"\\)}\\\\nTopics: {d.get\\(\"\"topics\"\"\\)}\\\\nDefault branch: {d.get\\(\"\"default_branch\"\"\\)}''\\)\")"
+    ]
+  }
+}

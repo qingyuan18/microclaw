@@ -16,6 +16,8 @@ const WORKFLOW_QWEN_EDIT: &str =
     include_str!("../comfyui_client_example/workflow/qwen-image-edit.json");
 const WORKFLOW_LTX_I2V: &str =
     include_str!("../comfyui_client_example/workflow/LTX-i2v.json");
+const WORKFLOW_LTX_LIPSYNC: &str =
+    include_str!("../comfyui_client_example/workflow/LTX-lipSync.json");
 
 fn http_client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
@@ -67,12 +69,14 @@ impl Tool for ComfyUiTool {
                 "Workflow types:\n",
                 "- text_to_image: Generate an image from a text description. No image input needed.\n",
                 "- image_edit: Edit/transform an existing image based on text instruction. Image required.\n",
-                "- image_to_video: Animate a static image into a short video. Image required.\n\n",
+                "- image_to_video: Animate a static image into a short video. Image required.\n",
+                "- lip_sync: Generate a lip-synced video from an image and audio file. Both image and audio required.\n\n",
                 "NOTE: Text-to-video is NOT supported. To generate a video from text, first use ",
                 "text_to_image to create an image, then use image_to_video on that image.\n\n",
                 "Image input: use image_path (local file path) OR image_base64 (base64 string). ",
                 "Prefer image_path when the image is already a local file (e.g. output from a previous ",
                 "text_to_image call). Use image_base64 only when the image comes from user chat.\n\n",
+                "Audio input (lip_sync only): use audio_path (local file path) or audio_base64 (base64 string).\n\n",
                 "Returns a local file path. Use send_message with attachment_path to send the result to the user.",
             )
             .into(),
@@ -80,7 +84,7 @@ impl Tool for ComfyUiTool {
                 json!({
                     "workflow_type": {
                         "type": "string",
-                        "enum": ["text_to_image", "image_edit", "image_to_video"],
+                        "enum": ["text_to_image", "image_edit", "image_to_video", "lip_sync"],
                         "description": "Which workflow to use. No text_to_video: use text_to_image + image_to_video instead."
                     },
                     "prompt": {
@@ -97,7 +101,15 @@ impl Tool for ComfyUiTool {
                     },
                     "duration_seconds": {
                         "type": "integer",
-                        "description": "Video duration in seconds. Used by image_to_video (default 6)."
+                        "description": "Video duration in seconds. Used by image_to_video (default 8) and lip_sync (default 16)."
+                    },
+                    "audio_path": {
+                        "type": "string",
+                        "description": "Local file path to an audio file (mp3/wav). Used by lip_sync workflow."
+                    },
+                    "audio_base64": {
+                        "type": "string",
+                        "description": "Base64-encoded audio data. Used by lip_sync workflow. Use audio_path instead if the audio is already a local file."
                     }
                 }),
                 &["workflow_type", "prompt"],
@@ -116,6 +128,8 @@ impl Tool for ComfyUiTool {
         };
         let image_path = input.get("image_path").and_then(|v| v.as_str());
         let image_base64 = input.get("image_base64").and_then(|v| v.as_str());
+        let audio_path = input.get("audio_path").and_then(|v| v.as_str());
+        let audio_base64 = input.get("audio_base64").and_then(|v| v.as_str());
         let duration_seconds = input.get("duration_seconds").and_then(|v| v.as_u64());
 
         // Resolve image: prefer image_path (read from disk), fall back to image_base64
@@ -128,6 +142,21 @@ impl Tool for ComfyUiTool {
             match base64::engine::general_purpose::STANDARD.decode(b64) {
                 Ok(bytes) => Some(bytes),
                 Err(e) => return ToolResult::error(format!("Invalid image_base64: {e}")),
+            }
+        } else {
+            None
+        };
+
+        // Resolve audio: prefer audio_path (read from disk), fall back to audio_base64
+        let audio_bytes: Option<Vec<u8>> = if let Some(path) = audio_path {
+            match tokio::fs::read(path).await {
+                Ok(bytes) => Some(bytes),
+                Err(e) => return ToolResult::error(format!("Failed to read audio_path '{path}': {e}")),
+            }
+        } else if let Some(b64) = audio_base64 {
+            match base64::engine::general_purpose::STANDARD.decode(b64) {
+                Ok(bytes) => Some(bytes),
+                Err(e) => return ToolResult::error(format!("Invalid audio_base64: {e}")),
             }
         } else {
             None
@@ -153,11 +182,30 @@ impl Tool for ComfyUiTool {
                         "image_to_video requires image_path or image_base64".into(),
                     ),
                 };
-                let dur = duration_seconds.unwrap_or(6) as i64;
+                let dur = duration_seconds.unwrap_or(8) as i64;
                 self.run_image_to_video(&prompt, img, dur).await
             }
+            "lip_sync" => {
+                let img = match &image_bytes {
+                    Some(b) => b.as_slice(),
+                    None => return ToolResult::error(
+                        "lip_sync requires image_path or image_base64".into(),
+                    ),
+                };
+                let aud = match &audio_bytes {
+                    Some(b) => b.as_slice(),
+                    None => return ToolResult::error(
+                        "lip_sync requires audio_path or audio_base64".into(),
+                    ),
+                };
+                let dur = duration_seconds.unwrap_or(16) as i64;
+                let audio_ext = audio_path
+                    .and_then(|p| p.rsplit('.').next())
+                    .unwrap_or("mp3");
+                self.run_lip_sync(&prompt, img, aud, audio_ext, dur).await
+            }
             _ => ToolResult::error(format!(
-                "Unknown workflow_type: {workflow_type}. Must be one of: text_to_image, image_edit, image_to_video"
+                "Unknown workflow_type: {workflow_type}. Must be one of: text_to_image, image_edit, image_to_video, lip_sync"
             )),
         }
     }
@@ -241,6 +289,63 @@ impl ComfyUiTool {
         // Resolution (nodes 200, 201)
         set_node_input(&mut wf, "200", "value", json!(1024));
         set_node_input(&mut wf, "201", "value", json!(720));
+
+        self.queue_and_save(wf, "videos", 3600).await
+    }
+
+    /// LTX-lipSync: upload image + audio + text → lip-synced video
+    /// Nodes: 367(Text Multiline prompt), 240(LoadImage filename), 243(LoadAudio audio),
+    ///        178(RandomNoise seed), 355(ImpactInt duration sec), 358(width), 359(height)
+    async fn run_lip_sync(
+        &self,
+        prompt: &str,
+        image_bytes: &[u8],
+        audio_bytes: &[u8],
+        audio_ext: &str,
+        duration_sec: i64,
+    ) -> ToolResult {
+        // Upload image to ComfyUI server
+        let remote_image = match upload_image_bytes_to_comfyui(
+            &self.server_url,
+            image_bytes,
+            &format!("microclaw_{}.png", uuid::Uuid::new_v4()),
+        )
+        .await
+        {
+            Ok(name) => name,
+            Err(e) => return ToolResult::error(format!("Failed to upload image to ComfyUI: {e}")),
+        };
+
+        // Upload audio to ComfyUI server
+        let remote_audio = match upload_audio_to_comfyui(
+            &self.server_url,
+            audio_bytes,
+            &format!("microclaw_{}.{}", uuid::Uuid::new_v4(), audio_ext),
+        )
+        .await
+        {
+            Ok(name) => name,
+            Err(e) => return ToolResult::error(format!("Failed to upload audio to ComfyUI: {e}")),
+        };
+
+        let mut wf: serde_json::Value = match serde_json::from_str(WORKFLOW_LTX_LIPSYNC) {
+            Ok(v) => v,
+            Err(e) => return ToolResult::error(format!("Failed to parse LTX-lipSync workflow: {e}")),
+        };
+
+        // Inject prompt (node 367 Text Multiline)
+        set_node_input(&mut wf, "367", "text", json!(prompt));
+        // Set uploaded image filename (node 240 LoadImage)
+        set_node_input(&mut wf, "240", "image", json!(remote_image));
+        // Set uploaded audio filename (node 243 LoadAudio)
+        set_node_input(&mut wf, "243", "audio", json!(remote_audio));
+        // Duration in seconds (node 355 ImpactInt)
+        set_node_input(&mut wf, "355", "value", json!(duration_sec));
+        // Randomize noise seed (node 178)
+        set_node_input(&mut wf, "178", "noise_seed", json!(random_seed()));
+        // Resolution (nodes 358, 359)
+        set_node_input(&mut wf, "358", "value", json!(1024));
+        set_node_input(&mut wf, "359", "value", json!(720));
 
         self.queue_and_save(wf, "videos", 3600).await
     }
@@ -373,6 +478,69 @@ async fn upload_image_bytes_to_comfyui(
         .unwrap_or("");
     if !subfolder.is_empty() {
         Ok(format!("{subfolder}/{name}"))
+    } else {
+        Ok(name.to_string())
+    }
+}
+
+/// Upload raw audio bytes to ComfyUI via the `/upload/image` endpoint.
+/// ComfyUI's `/upload/image` accepts any file type and stores it under the
+/// configured "input" directory. We use `subfolder=audio2video` to keep audio
+/// files organized. Returns the relative path (e.g. "audio2video/file.mp3")
+/// for use in LoadAudio workflow nodes.
+async fn upload_audio_to_comfyui(
+    server_url: &str,
+    audio_bytes: &[u8],
+    filename: &str,
+) -> Result<String, String> {
+    let mime = if filename.ends_with(".wav") {
+        "audio/wav"
+    } else {
+        "audio/mpeg"
+    };
+
+    let subfolder = "audio2video";
+
+    let file_part = reqwest::multipart::Part::bytes(audio_bytes.to_vec())
+        .file_name(filename.to_string())
+        .mime_str(mime)
+        .map_err(|e| format!("Multipart error: {e}"))?;
+
+    let form = reqwest::multipart::Form::new()
+        .text("type", "input")
+        .text("subfolder", subfolder)
+        .part("image", file_part);
+
+    let upload_url = format!("{}/upload/image", server_url);
+    let resp = http_client()
+        .post(&upload_url)
+        .multipart(form)
+        .timeout(Duration::from_secs(60))
+        .send()
+        .await
+        .map_err(|e| format!("Audio upload failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("ComfyUI audio upload error (HTTP {status}): {body}"));
+    }
+
+    let info: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Invalid audio upload response: {e}"))?;
+
+    let name = info
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| format!("Unexpected audio upload response: {info}"))?;
+    let remote_subfolder = info
+        .get("subfolder")
+        .and_then(|v| v.as_str())
+        .unwrap_or(subfolder);
+    if !remote_subfolder.is_empty() {
+        Ok(format!("{remote_subfolder}/{name}"))
     } else {
         Ok(name.to_string())
     }

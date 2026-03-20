@@ -2,7 +2,7 @@
 
 
 SCRIPT="./microclaw start"
-LOG_FILE="microlaw.log"
+LOG_FILE="microclaw.log"
 
 echo "启动脚本: $SCRIPT"
 

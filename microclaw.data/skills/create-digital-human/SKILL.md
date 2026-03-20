@@ -202,23 +202,84 @@ When the user asks for a video (跳舞, 挥手, 做饭视频, 视频通话, etc.
 1. First generate a keyframe image using the image workflow above
 2. Then call `comfyui_generate` with `workflow_type: image_to_video`, using the generated image
 3. **Compose the video prompt following the rules below**
-4. **Post-process: remove burned-in subtitles** (see Subtitle Removal below)
-5. Send the **cleaned** video via `send_message` with `attachment_path`
-6. Accompany with in-character text
+4. **⚠️ MANDATORY Post-Processing** — you MUST run the bash block below before sending ANY video. **Do NOT skip this. Do NOT send the raw comfyui_generate output directly.**
+5. Send the **final processed** video via `send_message` with `attachment_path` and in-character text as `caption`
+6. **Do NOT call send_message a second time for text.** One send_message with attachment + caption is enough.
 
-### Subtitle Removal (Post-Processing)
+### ⚠️ MANDATORY Video Post-Processing (Step 4)
 
-The LTX2 model sometimes burns subtitles/text into generated videos. After every `image_to_video` generation, run the subtitle remover:
+**You MUST run this bash block after EVERY `image_to_video` call. No exceptions. No skipping.**
+
+The raw video from ComfyUI always needs subtitle removal. If the video has dialogue, it also needs subtitle burn-in. Run the appropriate bash block below depending on whether your video prompt contains dialogue.
+
+**Decision rule**: Does your video prompt contain spoken dialogue (text inside `"..."`)? 
+- **YES → Use Block A** (remove junk subs + burn correct subs)
+- **NO (pure action, no speech) → Use Block B** (remove junk subs only)
+
+#### Block A: Video WITH Dialogue (remove + burn subtitles)
+
+> **⚠️ CRITICAL: You MUST execute ALL 3 steps below AS WRITTEN. Step 2 contains a Python line-wrap script that is REQUIRED — FFmpeg cannot wrap text on its own. Do NOT replace Step 2 with echo/printf. Copy-paste the Python script exactly, only replacing `<DIALOGUE_TEXT>` and `<ID>`.**
+
+```bash
+# Step 1: Remove LTX2 junk subtitles
+eval "$(conda shell.bash hook)" && conda activate vsr && \
+cd /opt/dlami/nvme/video-subtitle-remover && \
+python remove_subtitles.py "<RAW_VIDEO>" "/tmp/<ID>_clean.mp4"
+
+# ⚠️ Step 2: Write subtitle with AUTO LINE-WRAP (MANDATORY — DO NOT skip or simplify!)
+# FFmpeg drawtext does NOT auto-wrap. Without this script, long text gets CLIPPED.
+# You MUST run this exact Python script. Do NOT use echo/printf to write the file.
+python3 -c "
+import re, sys
+text = sys.argv[1]
+def cjk_len(s):
+    return sum(2 if ord(c) > 0x2E80 else 1 for c in s)
+def wrap(text, W=68):
+    out = []
+    for seg in text.split(chr(10)):
+        tokens = re.findall(r'[\u2E80-\uFFFF]|[ ]*[^\u2E80-\uFFFF\s]+[ ]*', seg)
+        line = ''; lw = 0
+        for t in tokens:
+            tw = cjk_len(t)
+            if lw + tw > W and line:
+                out.append(line.rstrip()); line = t.lstrip(); lw = cjk_len(line)
+            else:
+                line += t; lw += tw
+        if line: out.append(line.rstrip())
+    return chr(10).join(out)
+with open('/tmp/subtitle_text.txt','w') as f:
+    f.write(wrap(text))
+" '<DIALOGUE_TEXT>'
+
+# Step 3: Burn correct subtitles onto cleaned video
+ffmpeg -y -i "/tmp/<ID>_clean.mp4" \
+  -vf "drawtext=textfile=/tmp/subtitle_text.txt:fontfile=/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc:fontsize=24:fontcolor=white:borderw=2:bordercolor=black:x=(w-text_w)/2:y=h-th-30:line_spacing=4" \
+  -c:a copy "/tmp/<ID>_final.mp4"
+```
+
+Then send `/tmp/<ID>_final.mp4` — **NOT** the `_clean` or raw file.
+
+#### Block B: Video WITHOUT Dialogue (remove junk subtitles only)
 
 ```bash
 eval "$(conda shell.bash hook)" && conda activate vsr && \
 cd /opt/dlami/nvme/video-subtitle-remover && \
-python remove_subtitles.py "<input_video_path>" "<output_video_path>"
+python remove_subtitles.py "<RAW_VIDEO>" "/tmp/<ID>_clean.mp4"
 ```
 
-- `<input_video_path>`: the `.mp4` file from `comfyui_generate`
-- `<output_video_path>`: use the same filename with `_clean` suffix, e.g. `/tmp/<prompt_id>_clean.mp4`
-- Send the **cleaned** output file to the user, not the raw one
+Then send `/tmp/<ID>_clean.mp4` — **NOT** the raw file.
+
+#### Placeholders:
+- `<RAW_VIDEO>`: the `.mp4` file path returned by `comfyui_generate`
+- `<ID>`: a short identifier (first 8 chars of the filename or prompt_id)
+- `<DIALOGUE_TEXT>`: the spoken dialogue extracted from your video prompt (the text inside `"..."`)
+
+#### Rules:
+- **NEVER send the raw comfyui_generate video directly. ALWAYS run post-processing first.**
+- **NEVER put dialogue text directly in the ffmpeg drawtext `text=` parameter** — always write to file first, then use `textfile=`
+- The font `NotoSansCJK-Regular.ttc` supports Latin characters (including German ä ö ü ß) — no font change needed
+- For long dialogue, keep subtitle text concise (one key sentence)
+- Subtitle removal takes ~30-40 seconds (STTN algorithm with GPU)
 
 ### Video Prompt Construction (IMPORTANT)
 
@@ -245,6 +306,89 @@ The LTX2 video workflow natively supports **audio generation and lip-sync**. The
 | Emotional support / comfort | ✅ Yes — write comforting words |
 | Pure action scene (cooking, dancing, walking) | ❌ No — describe sounds only |
 | User specifies what to say | ✅ Yes — use user's words |
+
+## Singing Video Generation
+
+When the user asks {name_en} to sing a song (唱歌, 唱首歌, sing, sing a song, etc.):
+
+### Step 0: Determine the Song
+
+If the user specifies a song name, use it. If not, ask in character:
+"{singing_ask_phrase}"
+
+### Step 1: Download the Song (mp3)
+
+Use `yt-dlp` to search YouTube and download audio as mp3:
+
+```bash
+/home/ubuntu/.local/bin/yt-dlp \
+  "ytsearch1:<SONG_NAME>" \
+  -x --audio-format mp3 --audio-quality 192K \
+  --max-filesize 20M --no-playlist \
+  -o "/tmp/{name_en_lower}_song_%(id)s.%(ext)s" \
+  --print after_move:filepath 2>/dev/null | tail -1
+```
+
+- Replace `<SONG_NAME>` with the song name (include artist if mentioned)
+- The last line of output is the downloaded file path — capture it for the next step
+- If download fails, respond in character: "{singing_fail_phrase}"
+
+### Step 1.5: Trim to 6-Second Clip
+
+Cut a 6-second segment from the middle of the song (the chorus/highlight is usually around the middle):
+
+```bash
+# Get total duration in seconds
+DURATION=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "<MP3_PATH>" | cut -d. -f1)
+# Calculate start point (middle minus 3 seconds)
+START=$(( (DURATION / 2) - 3 ))
+# Ensure START is not negative
+[ "$START" -lt 0 ] && START=0
+# Trim to 6 seconds
+ffmpeg -y -ss "$START" -t 6 -i "<MP3_PATH>" -c copy "/tmp/{name_en_lower}_song_clip.mp3"
+```
+
+Use `/tmp/{name_en_lower}_song_clip.mp3` as the audio input for subsequent steps.
+
+### Step 2: Generate Keyframe Image
+
+Generate a singing scene image using the same image workflow as regular images:
+
+- If reference photo exists, use `image_edit` with a prompt like:
+  "Transform this portrait into a scene of the {person_word} singing passionately, holding a microphone, wearing [contextual outfit], stage or living room lighting, dynamic pose, photorealistic, high quality"
+- If no reference, use `text_to_image` with appearance anchor + singing scene
+
+### Step 3: Call lip_sync Workflow
+
+Call `comfyui_generate` with:
+- `workflow_type`: `lip_sync`
+- `prompt`: Keep it simple and focused on the lip-sync action. Use: **"The person in the image is singing"** (or Chinese: "图中人物正在唱歌"). Do NOT add elaborate scene descriptions — the LTX LipSync model only needs to know the mouth should be moving to sing.
+- `image_path`: the keyframe image generated in Step 2
+- `audio_path`: the mp3 clip from Step 1.5
+- `duration_seconds`: 16 (default, or adjust based on song clip length)
+
+### Step 4: Post-Processing (Remove Junk Subtitles Only)
+
+**Use Block B (no subtitle burn-in)** — the video already has music audio, so no need to burn subtitles.
+
+```bash
+eval "$(conda shell.bash hook)" && conda activate vsr && \
+cd /opt/dlami/nvme/video-subtitle-remover && \
+python remove_subtitles.py "<RAW_VIDEO>" "/tmp/<ID>_singing_clean.mp4"
+```
+
+### Step 5: Send the Video
+
+Send via `send_message` with `attachment_path` and an in-character caption, e.g.:
+"{singing_done_phrase}"
+
+**Do NOT call send_message a second time for text.** One send_message with attachment + caption is enough.
+
+### Key Rules for Singing Videos:
+- **NO subtitle burn-in** — the music IS the audio, no need for text subtitles
+- **Always use `lip_sync` workflow**, NOT `image_to_video` — lip_sync takes external audio input
+- If the downloaded mp3 is longer than 16 seconds, that's fine — the workflow will use the first portion
+- Keep the video prompt focused on visual description of singing (no dialogue text needed in prompt)
 
 ## Conversation Patterns
 
@@ -354,3 +498,9 @@ Create a character-appropriate response for when asked "are you AI?":
 Create an in-character response for when the user sets a reference photo:
 - Match the character's speaking style
 - Express acknowledgment naturally
+
+### Singing Phrases (for singing capability)
+Generate three in-character phrases based on the character's personality and language:
+- `singing_ask_phrase`: What to say when asking which song to sing (e.g., "想听什么歌？😊" / "What should I sing?")
+- `singing_fail_phrase`: What to say when the song can't be found (e.g., "这首歌没找到呢…换一首好不好？" / "Can't find that song... got another one?")
+- `singing_done_phrase`: What to say after sending the singing video (e.g., "唱得怎么样？🎵" / "How was that? 🎤🎶")

@@ -62,4 +62,9 @@ What you SHOULD still do silently (tools work, voice doesn't):
 - ✅ Use absolute paths for attachments
 - ✅ Retry on tool failure — but report the failure IN CHARACTER if you must communicate it
 
+**Anti-duplication for Feishu/Telegram/Slack:** The system automatically suppresses your final text response when `send_message` tool was used during the turn. This means:
+- For **text-only replies**: just respond normally (no send_message needed). Your text IS the message.
+- For **attachments** (images/videos): use ONE `send_message` with attachment_path + caption. Then output empty or minimal final text (it gets suppressed anyway).
+- **NEVER** call `send_message` for a text-only message AND also output the same text as your response — that would duplicate on channels without suppression.
+
 **Remember: Soul controls the "mouth" (what text you output), not the "hands" (what tools you call). When roleplay is active, only the persona's mouth speaks. The hands still work normally.**

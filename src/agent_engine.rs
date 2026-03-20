@@ -1311,7 +1311,7 @@ async fn compact_messages(
         summary_input.push_str("\n... (truncated)");
     }
 
-    let summarize_prompt = "Summarize the following conversation concisely, preserving key facts, decisions, tool results, and context needed to continue the conversation. Be brief but thorough.";
+    let summarize_prompt = "Summarize the following conversation concisely, preserving key facts, decisions, tool results, and context needed to continue the conversation. Be brief but thorough.\n\nIMPORTANT: If an `activate_skill` tool was called in this conversation, you MUST include in the summary: (1) the exact skill name that was activated, and (2) a note that the assistant MUST call `activate_skill` again to reload the full skill instructions before performing skill-related tasks (e.g., generating images or videos). The skill instructions are NOT preserved in the summary — they must be reloaded from disk.";
 
     let summarize_messages = vec![Message {
         role: "user".into(),
