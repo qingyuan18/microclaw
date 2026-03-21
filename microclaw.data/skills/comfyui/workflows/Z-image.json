@@ -1,0 +1,177 @@
+{
+  "1": {
+    "inputs": {
+      "unet_name": "z_image_turbo_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "2": {
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "3": {
+    "inputs": {
+      "vae_name": "z-image-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "4": {
+    "inputs": {
+      "seed": 209986078305229,
+      "steps": 10,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "6",
+        0
+      ],
+      "latent_image": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "K采样器"
+    }
+  },
+  "5": {
+    "inputs": {
+      "text": [
+        "16",
+        0
+      ],
+      "clip": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码"
+    }
+  },
+  "6": {
+    "inputs": {
+      "conditioning": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "条件零化"
+    }
+  },
+  "7": {
+    "inputs": {
+      "width": [
+        "14",
+        0
+      ],
+      "height": [
+        "15",
+        0
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "空Latent图像"
+    }
+  },
+  "8": {
+    "inputs": {
+      "samples": [
+        "4",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "10": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  },
+  "14": {
+    "inputs": {
+      "value": 1024
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "整数"
+    }
+  },
+  "15": {
+    "inputs": {
+      "value": 720
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "整数"
+    }
+  },
+  "16": {
+    "inputs": {
+      "text": "复杂文案：\nA beautifully detailed hand-drawn journal/scrapbook style botanical illustration showing the complete watermelon growth cycle from seed to harvest.\nLayout: Open journal spread format with vintage botanical illustration aesthetic, cream/beige paper texture background, organized in a circular or sequential flow pattern.\n\nContent - 7 Growth Stages (西瓜生长周期七个阶段):\n1. **发芽期 (Germination Stage - 5-10天)**: Hand-drawn watermelon seed sprouting, showing seed coat breaking open, tiny root emerging downward, cotyledon leaves pushing upward through soil. Delicate line work with soft watercolor wash.\n2. **幼苗期 (Seedling Stage - 20-30天)**: Young watermelon seedling with 5-6 true leaves, developing root system visible below soil line showing leaf veins and serrated edges.\n3. **伸蔓期 (Vine Elongation Stage - 23-25天)**: Watermelon vines spreading and crawling, multiple tendrils curling, large palmate leaves, transition from upright to creeping growth. Dynamic flowing vine composition.\n4. **开花期 (Flowering Stage - 40-50天)**: Bright yellow watermelon flowers (both male and female), showing flower anatomy - petals, stamens, pistil. Bee or butterfly nearby for pollination. Delicate floral details.\n5Fruit Setting Stage - 4天)**: Tiny baby watermelon forming after pollination, small round green fruit attached to withered flower, early striping pattern beginning to show.\n6. **果实膨大期 (Fruit Enlargement Stage - 25-40天)**: Rapidly growing watermelon, showing size progression from small to large, developing characteristic dark green stripes on lighter green background, vine and leaves supporting the fruit.\n7. **成熟期 (Ripening/Maturity Stage - 10-20天)**: Fully mature watermelon with deep green color, prominent stripes, yellow ground spot, one cut open showing bright red flesh with black seeds, juicy and sweet appearance.\n\nDesign Elements:\n- Hand-written Chinese labels for each stage with days duration\n- Delicate botanical linegreens, yellows, reds)\n- Vintage scientific illustration style with cross-sections and detail callouts\n- Decorative elements: small watermelon vine borders, curling tendrils, leaves\n- Handwritten notes in margins describing key characteristics\n- Timeline arrows or numbers connecting the stages\n- Small color swatches showing green to red progression\n- Washi tape or decorative frame elements typical of journal style\n\nColor Palette: Soft greens (various shades), warm yellows, vibrant watermelon red, cream/beige paper, brown ink for text and outlines, subtle watercolor washes.\nStyle: Vintage botanical journal, hand-drawn with pen and watercolor, scientific yet artistic, warm and inviting, educational scrapbook aesthetic with personal touch.\nText: Include Chinese stage names, duration in days, and brief handwritten descriptions for each phase. Add title \"西瓜生长周期 Watermelon Growth Cycle\" in decorative hand-lettering at top.\nOverall composition should feel like a carefully curated page from a gardener's personal journal, combining scientific accuracy with artistic beauty."
+    },
+    "class_type": "Text Multiline",
+    "_meta": {
+      "title": "Text Multiline"
+    }
+  },
+  "17": {
+    "inputs": {
+      "purge_cache": true,
+      "purge_models": true,
+      "anything": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "LayerUtility: PurgeVRAM V2",
+    "_meta": {
+      "title": "图层工具：清除VRAM V2"
+    }
+  }
+}

@@ -2,7 +2,6 @@ pub mod acp_agent;
 pub mod activate_skill;
 pub mod bash;
 pub mod browser;
-pub mod comfyui;
 pub mod command_runner;
 pub mod edit_file;
 pub mod export_chat;
@@ -373,12 +372,6 @@ impl ToolRegistry {
                 db.clone(),
             )),
         ];
-        // Conditionally register ComfyUI tool if comfyui_url is configured
-        if let Some(ref url) = config.comfyui_url {
-            if !url.trim().is_empty() {
-                tools.push(Box::new(comfyui::ComfyUiTool::new(url, &config.data_dir)));
-            }
-        }
         // Conditionally register ACP agent tool if acp is configured
         if let Some(ref acp) = config.acp {
             if acp.enabled {

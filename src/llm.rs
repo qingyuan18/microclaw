@@ -2042,7 +2042,6 @@ mod tests {
             reflector_interval_mins: 15,
             soul_path: None,
             skip_tool_approval: false,
-            comfyui_url: None,
             acp: None,
             channels: std::collections::HashMap::new(),
         };
@@ -2095,7 +2094,6 @@ mod tests {
             reflector_interval_mins: 15,
             soul_path: None,
             skip_tool_approval: false,
-            comfyui_url: None,
             acp: None,
             channels: std::collections::HashMap::new(),
         };
@@ -2213,7 +2211,6 @@ mod tests {
             reflector_interval_mins: 15,
             soul_path: None,
             skip_tool_approval: false,
-            comfyui_url: None,
             acp: None,
             channels: std::collections::HashMap::new(),
         };
@@ -2370,7 +2367,6 @@ mod tests {
             reflector_interval_mins: 15,
             soul_path: None,
             skip_tool_approval: false,
-            comfyui_url: None,
             acp: None,
             channels: std::collections::HashMap::new(),
         };

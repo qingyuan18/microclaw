@@ -248,11 +248,6 @@ pub struct Config {
     #[serde(default = "default_skip_tool_approval")]
     pub skip_tool_approval: bool,
 
-    /// ComfyUI server URL for image/video generation (e.g. "http://192.168.1.100:8188").
-    /// If not set, the comfyui tool will be unavailable.
-    #[serde(default)]
-    pub comfyui_url: Option<String>,
-
     /// ACP (Agent Client Protocol) configuration for invoking coding agents via acpx.
     /// Requires `npm install -g acpx` on the host.
     #[serde(default)]
@@ -660,7 +655,6 @@ mod tests {
             reflector_interval_mins: 15,
             soul_path: None,
             skip_tool_approval: false,
-            comfyui_url: None,
             acp: None,
             channels: HashMap::new(),
         }
