@@ -1,0 +1,19 @@
+{
+  "parameters": {
+    "seed": {
+      "node_id": "4",
+      "field": "seed",
+      "type": "seed",
+      "class_type": "KSampler",
+      "description": "K采样器"
+    },
+    "prompt": {
+      "node_id": "16",
+      "field": "text",
+      "type": "string",
+      "class_type": "Text Multiline",
+      "description": "Text Multiline"
+    }
+  },
+  "output_type": "images"
+}

@@ -1,0 +1,26 @@
+{
+  "parameters": {
+    "prompt": {
+      "node_id": "35",
+      "field": "text",
+      "type": "string",
+      "class_type": "Text Multiline",
+      "description": "Text Multiline"
+    },
+    "seed": {
+      "node_id": "44",
+      "field": "seed",
+      "type": "seed",
+      "class_type": "KSampler",
+      "description": "K采样器"
+    },
+    "image": {
+      "node_id": "51",
+      "field": "image",
+      "type": "image_base64",
+      "class_type": "ETN_LoadImageBase64",
+      "description": "Load Image (Base64)"
+    }
+  },
+  "output_type": "images"
+}

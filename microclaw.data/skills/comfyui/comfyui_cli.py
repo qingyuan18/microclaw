@@ -30,10 +30,21 @@ from pathlib import Path
 # Config
 # ---------------------------------------------------------------------------
 
-SERVER_URL = os.environ.get("COMFYUI_URL", "http://localhost:8188").rstrip("/")
-OUTPUT_DIR = os.environ.get("COMFYUI_OUTPUT", "/tmp/comfyui_output")
 SCRIPT_DIR = Path(__file__).resolve().parent
 WORKFLOW_DIR = SCRIPT_DIR / "workflows"
+CONFIG_PATH = SCRIPT_DIR / "config.json"
+
+
+def _load_skill_config() -> dict:
+    if CONFIG_PATH.exists():
+        with open(CONFIG_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+_skill_config = _load_skill_config()
+SERVER_URL = os.environ.get("COMFYUI_URL", _skill_config.get("server_url", "http://localhost:8188")).rstrip("/")
+OUTPUT_DIR = os.environ.get("COMFYUI_OUTPUT", _skill_config.get("output_dir", "/tmp/comfyui_output"))
 
 
 # ---------------------------------------------------------------------------

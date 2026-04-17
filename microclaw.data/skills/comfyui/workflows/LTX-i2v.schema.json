@@ -1,0 +1,40 @@
+{
+  "parameters": {
+    "image": {
+      "node_id": "205",
+      "field": "image",
+      "type": "image_upload",
+      "class_type": "LoadImage",
+      "description": "加载图像"
+    },
+    "prompt": {
+      "node_id": "221",
+      "field": "text",
+      "type": "string",
+      "class_type": "CLIPTextEncode",
+      "description": "CLIP文本编码"
+    },
+    "seed": {
+      "node_id": "227",
+      "field": "noise_seed",
+      "type": "seed",
+      "class_type": "RandomNoise",
+      "description": "随机噪波"
+    },
+    "seed_235": {
+      "node_id": "235",
+      "field": "noise_seed",
+      "type": "seed",
+      "class_type": "RandomNoise",
+      "description": "随机噪波"
+    },
+    "prompt_250": {
+      "node_id": "250",
+      "field": "text",
+      "type": "string",
+      "class_type": "Text Multiline",
+      "description": "Text Multiline"
+    }
+  },
+  "output_type": "videos"
+}

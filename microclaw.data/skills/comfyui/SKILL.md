@@ -3,10 +3,11 @@ name: comfyui
 description: >
   AI image and video generation via ComfyUI. USE THIS SKILL when the user asks to
   generate/create/draw an image, edit an image, or create a video from an image.
-  Also activate when the user uploads/sends a ComfyUI workflow JSON, or asks to
-  add/import/register a new workflow (添加工作流、上传workflow、导入comfyui工作流).
-  当用户要求画图、生成图片、创建图像、编辑图片、生成视频、或上传ComfyUI工作流时，必须激活此 skill。
-  Supports text_to_image, image_edit, image_to_video, and custom workflows via analyze+run.
+  Also activate when the user uploads/sends a ComfyUI workflow JSON, asks to
+  add/import/register a new workflow, or wants to change/update the ComfyUI server URL/endpoint
+  (添加工作流、上传workflow、导入comfyui工作流、修改comfyui地址、更换comfyui服务器).
+  当用户要求画图、生成图片、编辑图片、生成视频、上传工作流、或修改ComfyUI后端地址时，必须激活此 skill。
+  Supports text_to_image, image_edit, image_to_video, custom workflows, and server config management.
 deps:
   - python3
 ---
@@ -75,9 +76,18 @@ python3 <skill_dir>/comfyui_cli.py \
 
 ### Important: Server URL
 
-The ComfyUI server URL must be provided. Check the bot's config for `comfyui_url`. You can either:
-- Pass it via `--server` flag
-- Or set the `COMFYUI_URL` environment variable
+The ComfyUI server URL is resolved in this order (first wins):
+1. `--server` flag on the command line
+2. `COMFYUI_URL` environment variable
+3. `server_url` in `<skill_dir>/config.json`
+4. Fallback: `http://localhost:8188`
+
+To view or update the configured URL, read/edit `<skill_dir>/config.json`:
+```json
+{
+  "server_url": "http://your-comfyui-host:8188"
+}
+```
 
 ### Important: Timeout
 
@@ -128,6 +138,24 @@ Step 3: Send video to user via send_message with attachment_path
 - When the user provides an image in chat, it is saved to a local file. The message will contain a path like `[图片已保存到本地: /tmp/feishu_upload_xxx.jpg]`. Extract this path and use it as `--image`.
 - When using output from a previous generation, use that output path directly as `--image`.
 - Prefer `--image` (file path) over base64 encoding. The script handles file reading internally.
+
+## Server Configuration
+
+When the user asks to change/update the ComfyUI server address (e.g., "把comfyui地址改成xxx", "update comfyui endpoint"):
+
+1. Read current config:
+   ```bash
+   cat <skill_dir>/config.json
+   ```
+2. Update the `server_url` field using `edit_file` or `write_file`:
+   ```json
+   {
+     "server_url": "http://<new_host>:<port>"
+   }
+   ```
+3. Confirm to the user the new server address.
+
+The config file is at `<skill_dir>/config.json`. The `server_url` value is used as the default for all ComfyUI operations when `--server` is not explicitly passed.
 
 ## Adding New Workflows
 
