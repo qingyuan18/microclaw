@@ -3,8 +3,10 @@ name: comfyui
 description: >
   AI image and video generation via ComfyUI. USE THIS SKILL when the user asks to
   generate/create/draw an image, edit an image, or create a video from an image.
-  当用户要求画图、生成图片、创建图像、编辑图片、或生成视频时，必须激活此 skill。
-  Supports text_to_image, image_edit, and image_to_video workflows.
+  Also activate when the user uploads/sends a ComfyUI workflow JSON, or asks to
+  add/import/register a new workflow (添加工作流、上传workflow、导入comfyui工作流).
+  当用户要求画图、生成图片、创建图像、编辑图片、生成视频、或上传ComfyUI工作流时，必须激活此 skill。
+  Supports text_to_image, image_edit, image_to_video, and custom workflows via analyze+run.
 deps:
   - python3
 ---
@@ -127,6 +129,55 @@ Step 3: Send video to user via send_message with attachment_path
 - When using output from a previous generation, use that output path directly as `--image`.
 - Prefer `--image` (file path) over base64 encoding. The script handles file reading internally.
 
-## Workflow Extension
+## Adding New Workflows
 
-To add new workflows, place the workflow JSON file in the `workflows/` subdirectory of this skill. Then update this SKILL.md with instructions for using the new workflow, and add the corresponding function in `comfyui_cli.py`.
+When the user uploads or provides a new ComfyUI workflow JSON, follow these steps:
+
+### Step 1: Save the workflow
+
+Save the JSON file to the `workflows/` subdirectory of this skill:
+```bash
+cp <uploaded_file> <skill_dir>/workflows/<name>.json
+```
+
+### Step 2: Analyze and generate schema
+
+```bash
+python3 <skill_dir>/comfyui_cli.py analyze <skill_dir>/workflows/<name>.json
+```
+
+This auto-detects input nodes by `class_type` and writes `<name>.schema.json` next to the workflow. The output shows the detected parameters — present them to the user for confirmation.
+
+**Auto-detected node types:**
+- `Text Multiline`, `CLIPTextEncode` → prompt (string)
+- `LoadImage` → image upload, `ETN_LoadImageBase64` → image base64
+- `KSampler`, `RandomNoise` → seed (auto-randomized)
+- `SaveImage` → image output, `VHS_VideoCombine` → video output
+
+### Step 3: Review and adjust schema
+
+If the user says a detected parameter is wrong, or a needed parameter is missing, edit the `<name>.schema.json` manually. Each parameter entry:
+```json
+{
+  "node_id": "35",
+  "field": "text",
+  "type": "string",
+  "class_type": "Text Multiline",
+  "description": "Main text prompt"
+}
+```
+Supported types: `string` (injected from --prompt), `image_base64`, `image_upload` (injected from --image), `seed` (auto-randomized), `integer` (injected from --duration).
+
+### Step 4: Run the new workflow
+
+```bash
+python3 <skill_dir>/comfyui_cli.py run \
+  --workflow <name>.json \
+  --prompt "<text>" \
+  --image "<path>" \
+  --server "<COMFYUI_URL>" \
+  --output-dir /tmp/comfyui_output \
+  --timeout 600
+```
+
+The `run` subcommand reads `<name>.schema.json` to know which nodes to inject parameters into. It works with any workflow that has a schema file.

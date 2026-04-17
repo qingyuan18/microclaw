@@ -214,8 +214,164 @@ def load_workflow(name: str) -> dict:
         return json.load(f)
 
 
+def load_schema(workflow_name: str) -> dict | None:
+    stem = Path(workflow_name).stem
+    schema_path = WORKFLOW_DIR / f"{stem}.schema.json"
+    if not schema_path.exists():
+        return None
+    with open(schema_path, encoding="utf-8") as f:
+        return json.load(f)
+
+
 # ---------------------------------------------------------------------------
-# Workflow runners
+# Workflow analysis — auto-detect parameters by class_type
+# ---------------------------------------------------------------------------
+
+PROMPT_CLASS_TYPES = {
+    "Text Multiline", "CLIPTextEncode",
+    "TextEncodeQwenImageEditPlusAdvance_lrzjason",
+}
+IMAGE_INPUT_CLASS_TYPES = {
+    "LoadImage", "ETN_LoadImageBase64",
+}
+SEED_CLASS_TYPES = {
+    "KSampler", "RandomNoise",
+}
+SEED_FIELD_NAMES = {"seed", "noise_seed"}
+OUTPUT_CLASS_TYPES = {
+    "SaveImage": "images",
+    "VHS_VideoCombine": "videos",
+}
+
+
+def analyze_workflow(workflow: dict) -> dict:
+    """Scan workflow JSON and produce a schema mapping of detected parameters."""
+    params: dict[str, dict] = {}
+    output_type = "images"
+
+    for node_id, node in workflow.items():
+        if not isinstance(node, dict):
+            continue
+        ct = node.get("class_type", "")
+        inputs = node.get("inputs", {})
+        meta_title = node.get("_meta", {}).get("title", "")
+
+        if ct in PROMPT_CLASS_TYPES:
+            # Only match nodes with a direct string "text" field (not a link like ["nodeId", 0])
+            field = "text" if ("text" in inputs and isinstance(inputs["text"], str)) else None
+            if field:
+                key = f"prompt_{node_id}" if "prompt" in params else "prompt"
+                params[key] = {
+                    "node_id": node_id, "field": field, "type": "string",
+                    "class_type": ct, "description": meta_title or f"Text prompt ({ct})",
+                }
+
+        elif ct in IMAGE_INPUT_CLASS_TYPES:
+            field = "image" if "image" in inputs else "images"
+            image_type = "image_base64" if ct == "ETN_LoadImageBase64" else "image_upload"
+            key = f"image_{node_id}" if "image" in params else "image"
+            params[key] = {
+                "node_id": node_id, "field": field, "type": image_type,
+                "class_type": ct, "description": meta_title or f"Image input ({ct})",
+            }
+
+        elif ct in SEED_CLASS_TYPES:
+            for sf in SEED_FIELD_NAMES:
+                if sf in inputs:
+                    key = f"seed_{node_id}" if "seed" in params else "seed"
+                    params[key] = {
+                        "node_id": node_id, "field": sf, "type": "seed",
+                        "class_type": ct, "description": meta_title or f"Random seed ({ct})",
+                    }
+                    break
+
+        if ct in OUTPUT_CLASS_TYPES:
+            output_type = OUTPUT_CLASS_TYPES[ct]
+
+    return {"parameters": params, "output_type": output_type}
+
+
+def cmd_analyze(args):
+    """Analyze a workflow JSON and write schema.json next to it."""
+    wf_path = Path(args.file)
+    if not wf_path.exists():
+        print(f"ERROR: File not found: {wf_path}", file=sys.stderr)
+        sys.exit(1)
+
+    with open(wf_path, encoding="utf-8") as f:
+        workflow = json.load(f)
+
+    schema = analyze_workflow(workflow)
+
+    if args.output:
+        out_path = Path(args.output)
+    else:
+        out_path = wf_path.parent / f"{wf_path.stem}.schema.json"
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(schema, f, ensure_ascii=False, indent=2)
+
+    print(json.dumps(schema, ensure_ascii=False, indent=2))
+    print(f"\nSchema written to: {out_path}", file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------
+# Generic workflow runner (schema-driven)
+# ---------------------------------------------------------------------------
+
+def run_generic(
+    workflow_name: str,
+    prompt: str | None,
+    image_path: str | None,
+    duration: int | None,
+    server_url: str,
+    output_dir: str,
+    timeout: int,
+) -> str:
+    wf = load_workflow(workflow_name)
+    schema = load_schema(workflow_name)
+
+    if schema is None:
+        raise RuntimeError(
+            f"No schema found for {workflow_name}. "
+            f"Run: python comfyui_cli.py analyze <workflow_file> to generate one."
+        )
+
+    params = schema.get("parameters", {})
+    output_type = schema.get("output_type", "images")
+
+    for _key, spec in params.items():
+        nid = str(spec["node_id"])
+        field = spec["field"]
+        ptype = spec["type"]
+
+        if ptype == "string" and prompt:
+            set_node_input(wf, nid, field, prompt)
+        elif ptype == "image_base64" and image_path:
+            with open(image_path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("utf-8")
+            set_node_input(wf, nid, field, b64)
+        elif ptype == "image_upload" and image_path:
+            remote = upload_image(
+                image_path, server_url,
+                filename=f"microclaw_{uuid.uuid4().hex[:8]}.png",
+            )
+            set_node_input(wf, nid, field, remote)
+        elif ptype == "seed":
+            set_node_input(wf, nid, field, random_seed())
+        elif ptype == "integer" and duration is not None:
+            set_node_input(wf, nid, field, duration)
+
+    result = queue_prompt(wf, server_url)
+    prompt_id = result.get("prompt_id")
+    if not prompt_id:
+        raise RuntimeError(f"No prompt_id returned: {result}")
+
+    return poll_and_download(prompt_id, server_url, output_type, timeout, output_dir)
+
+
+# ---------------------------------------------------------------------------
+# Legacy workflow runners (kept for backward compat with existing SKILL.md)
 # ---------------------------------------------------------------------------
 
 def run_text_to_image(prompt: str, server_url: str, output_dir: str, timeout: int) -> str:
@@ -237,7 +393,6 @@ def run_image_edit(prompt: str, image_path: str, server_url: str, output_dir: st
     wf = load_workflow("qwen-image-edit.json")
     set_node_input(wf, "35", "text", prompt)
 
-    # Encode image as base64 for ETN_LoadImageBase64 node
     with open(image_path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("utf-8")
     set_node_input(wf, "51", "image", b64)
@@ -254,7 +409,6 @@ def run_image_edit(prompt: str, image_path: str, server_url: str, output_dir: st
 def run_image_to_video(
     prompt: str, image_path: str, duration: int, server_url: str, output_dir: str, timeout: int
 ) -> str:
-    # Upload image to ComfyUI (LoadImage needs server-side file)
     remote_name = upload_image(
         image_path, server_url,
         filename=f"microclaw_{uuid.uuid4().hex[:8]}.png",
@@ -282,36 +436,76 @@ def run_image_to_video(
 
 def main():
     parser = argparse.ArgumentParser(description="ComfyUI CLI for MicroClaw")
-    parser.add_argument("--workflow", required=True, choices=["text_to_image", "image_edit", "image_to_video"])
-    parser.add_argument("--prompt", required=True, help="Text prompt")
-    parser.add_argument("--image", help="Input image path (required for image_edit and image_to_video)")
-    parser.add_argument("--duration", type=int, default=6, help="Video duration in seconds (default: 6)")
-    parser.add_argument("--server", default=SERVER_URL, help=f"ComfyUI server URL (default: {SERVER_URL})")
-    parser.add_argument("--output-dir", default=OUTPUT_DIR, help=f"Output directory (default: {OUTPUT_DIR})")
-    parser.add_argument("--timeout", type=int, default=0, help="Timeout in seconds (0 = auto per workflow)")
+    sub = parser.add_subparsers(dest="command")
+
+    # --- analyze subcommand ---
+    p_analyze = sub.add_parser("analyze", help="Analyze a workflow JSON and generate schema.json")
+    p_analyze.add_argument("file", help="Path to workflow JSON file")
+    p_analyze.add_argument("--output", help="Output schema path (default: <stem>.schema.json next to workflow)")
+
+    # --- run subcommand (generic, schema-driven) ---
+    p_run = sub.add_parser("run", help="Run any workflow using its schema.json")
+    p_run.add_argument("--workflow", required=True, help="Workflow JSON filename (in workflows/ dir)")
+    p_run.add_argument("--prompt", help="Text prompt")
+    p_run.add_argument("--image", help="Input image path")
+    p_run.add_argument("--duration", type=int, help="Duration in seconds (for integer params)")
+    p_run.add_argument("--server", default=SERVER_URL)
+    p_run.add_argument("--output-dir", default=OUTPUT_DIR)
+    p_run.add_argument("--timeout", type=int, default=0)
+
+    # --- legacy subcommand-less mode for backward compat ---
+    parser.add_argument("--workflow", dest="legacy_workflow", choices=["text_to_image", "image_edit", "image_to_video"])
+    parser.add_argument("--prompt", dest="legacy_prompt")
+    parser.add_argument("--image", dest="legacy_image")
+    parser.add_argument("--duration", dest="legacy_duration", type=int, default=6)
+    parser.add_argument("--server", dest="legacy_server", default=SERVER_URL)
+    parser.add_argument("--output-dir", dest="legacy_output_dir", default=OUTPUT_DIR)
+    parser.add_argument("--timeout", dest="legacy_timeout", type=int, default=0)
+
     args = parser.parse_args()
 
-    server = args.server.rstrip("/")
-    output_dir = args.output_dir
-
     try:
-        if args.workflow == "text_to_image":
-            timeout = args.timeout or 600
-            path = run_text_to_image(args.prompt, server, output_dir, timeout)
+        if args.command == "analyze":
+            cmd_analyze(args)
+            return
 
-        elif args.workflow == "image_edit":
-            if not args.image:
+        if args.command == "run":
+            timeout = args.timeout or 600
+            path = run_generic(
+                args.workflow, args.prompt, args.image, args.duration,
+                args.server.rstrip("/"), args.output_dir, timeout,
+            )
+            print(path)
+            return
+
+        # Legacy mode: --workflow text_to_image|image_edit|image_to_video
+        if not args.legacy_workflow:
+            parser.print_help()
+            sys.exit(1)
+
+        server = args.legacy_server.rstrip("/")
+        output_dir = args.legacy_output_dir
+
+        if args.legacy_workflow == "text_to_image":
+            timeout = args.legacy_timeout or 600
+            path = run_text_to_image(args.legacy_prompt, server, output_dir, timeout)
+
+        elif args.legacy_workflow == "image_edit":
+            if not args.legacy_image:
                 print("ERROR: --image is required for image_edit", file=sys.stderr)
                 sys.exit(1)
-            timeout = args.timeout or 600
-            path = run_image_edit(args.prompt, args.image, server, output_dir, timeout)
+            timeout = args.legacy_timeout or 600
+            path = run_image_edit(args.legacy_prompt, args.legacy_image, server, output_dir, timeout)
 
-        elif args.workflow == "image_to_video":
-            if not args.image:
+        elif args.legacy_workflow == "image_to_video":
+            if not args.legacy_image:
                 print("ERROR: --image is required for image_to_video", file=sys.stderr)
                 sys.exit(1)
-            timeout = args.timeout or 3600
-            path = run_image_to_video(args.prompt, args.image, args.duration, server, output_dir, timeout)
+            timeout = args.legacy_timeout or 3600
+            path = run_image_to_video(
+                args.legacy_prompt, args.legacy_image, args.legacy_duration,
+                server, output_dir, timeout,
+            )
 
         print(path)
 

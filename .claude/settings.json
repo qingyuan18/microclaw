@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:n8n.io)",
+      "WebFetch(domain:comfyui.com)",
+      "WebFetch(domain:dify.ai)",
+      "WebFetch(domain:flowise.io)",
+      "WebFetch(domain:docs.n8n.io)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:comfyui.docs.org)",
+      "WebFetch(domain:civitai.com)",
+      "WebFetch(domain:www.anthropic.com)",
+      "WebFetch(domain:reddit.com)",
+      "Bash(python3 -c 'import json; wf=json.load\\(open\\('\\\\''__TRACKED_VAR__'\\\\''\\)\\); [print\\(f'\\\\''  {k}: {v.get\\(\"class_type\",\"?\"\\)}'\\\\''\\) for k,v in wf.items\\(\\) if isinstance\\(v,dict\\)]')",
+      "Bash(python3 comfyui_cli.py analyze workflows/Z-image.json --output /dev/stdout)",
+      "Bash(python3 comfyui_cli.py analyze workflows/qwen-image-edit.json --output /dev/stdout)",
+      "Bash(python3 comfyui_cli.py analyze workflows/LTX-i2v.json --output /dev/stdout)"
+    ]
+  }
+}
